@@ -3,7 +3,17 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import dynamic from "next/dynamic"
 import Link from "next/link"
-import { HelpCircle, List, Lock, Map as MapIcon, MessageSquare, Navigation, Star } from "lucide-react"
+import {
+  ChevronLeft,
+  ChevronRight,
+  HelpCircle,
+  List,
+  Lock,
+  Map as MapIcon,
+  MessageSquare,
+  Navigation,
+  Star,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 import { filterRestaurants, restaurantCuisineGroup, type SortMode } from "@/lib/restaurants"
 import { CUISINE_GROUP_ORDER } from "@/lib/cuisine-groups.mjs"
@@ -33,6 +43,19 @@ const INITIAL_FILTERS: Filters = {
 
 type MobileView = "list" | "map"
 
+// Build a compact page list with ellipses, e.g. 1 … 4 5 6 … 12
+function getPageItems(current: number, total: number): (number | "ellipsis")[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+  const items: (number | "ellipsis")[] = [1]
+  const start = Math.max(2, current - 1)
+  const end = Math.min(total - 1, current + 1)
+  if (start > 2) items.push("ellipsis")
+  for (let i = start; i <= end; i++) items.push(i)
+  if (end < total - 1) items.push("ellipsis")
+  items.push(total)
+  return items
+}
+
 interface HalalFinderProps {
   restaurants: Restaurant[]
 }
@@ -50,6 +73,8 @@ export function HalalFinder({ restaurants: allRestaurants }: HalalFinderProps) {
   const [locating, setLocating] = useState(false)
   const [locatedByGps, setLocatedByGps] = useState(false)
   const [locationError, setLocationError] = useState<string | null>(null)
+  const [pageSize, setPageSize] = useState<number | "all">(10)
+  const [page, setPage] = useState(1)
   const autoLocated = useRef(false)
 
   const cuisineOptions = useMemo(() => {
@@ -73,6 +98,20 @@ export function HalalFinder({ restaurants: allRestaurants }: HalalFinderProps) {
 
   const showDistance =
     Boolean(origin) && (applied.postcode.trim().length > 0 || locatedByGps)
+
+  const perPage = pageSize === "all" ? restaurants.length || 1 : pageSize
+  const pageCount = Math.max(1, Math.ceil(restaurants.length / perPage))
+  const currentPage = Math.min(page, pageCount)
+  const pageStart = (currentPage - 1) * perPage
+  const pagedRestaurants = useMemo(
+    () => restaurants.slice(pageStart, pageStart + perPage),
+    [restaurants, pageStart, perPage],
+  )
+
+  // Reset to the first page whenever the result set or page size changes.
+  useEffect(() => {
+    setPage(1)
+  }, [applied, origin, chips, sortBy, pageSize])
 
   async function handleSearch() {
     setHasSearched(true)
@@ -239,6 +278,25 @@ export function HalalFinder({ restaurants: allRestaurants }: HalalFinderProps) {
           </p>
 
           <div className="flex items-center gap-2">
+            <label className="hidden items-center gap-1.5 text-sm text-muted-foreground sm:flex">
+              <span>Show</span>
+              <select
+                value={pageSize === "all" ? "all" : String(pageSize)}
+                onChange={(e) =>
+                  setPageSize(e.target.value === "all" ? "all" : Number(e.target.value))
+                }
+                aria-label="Number of restaurants per page"
+                className="rounded-md border border-border bg-background px-2 py-1.5 text-sm font-medium text-foreground"
+              >
+                {[10, 20, 30].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+                <option value="all">All</option>
+              </select>
+            </label>
+
             <div
               className="inline-flex rounded-lg border border-border p-0.5"
               role="group"
@@ -296,12 +354,68 @@ export function HalalFinder({ restaurants: allRestaurants }: HalalFinderProps) {
         <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
           <div className={cn(mobileView === "map" && "hidden lg:block")}>
             <RestaurantList
-              restaurants={restaurants}
+              restaurants={pagedRestaurants}
               activeId={activeId}
               onSelect={setActiveId}
               showDistance={showDistance}
               hasSearched={hasSearched}
             />
+
+            {restaurants.length > 0 && pageCount > 1 && (
+              <nav
+                className="mt-6 flex items-center justify-between gap-3"
+                aria-label="Restaurant list pagination"
+              >
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage <= 1}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent/10 disabled:pointer-events-none disabled:opacity-40"
+                >
+                  <ChevronLeft className="size-4" aria-hidden="true" />
+                  Prev
+                </button>
+
+                <div className="flex items-center gap-1">
+                  {getPageItems(currentPage, pageCount).map((item, i) =>
+                    item === "ellipsis" ? (
+                      <span
+                        key={`gap-${i}`}
+                        className="px-1.5 text-sm text-muted-foreground"
+                        aria-hidden="true"
+                      >
+                        …
+                      </span>
+                    ) : (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => setPage(item)}
+                        aria-current={item === currentPage ? "page" : undefined}
+                        className={cn(
+                          "inline-flex size-9 items-center justify-center rounded-lg text-sm font-medium transition-colors",
+                          item === currentPage
+                            ? "bg-primary text-primary-foreground"
+                            : "border border-border text-foreground hover:bg-accent/10",
+                        )}
+                      >
+                        {item}
+                      </button>
+                    ),
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                  disabled={currentPage >= pageCount}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent/10 disabled:pointer-events-none disabled:opacity-40"
+                >
+                  Next
+                  <ChevronRight className="size-4" aria-hidden="true" />
+                </button>
+              </nav>
+            )}
           </div>
 
           <div
