@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import dynamic from "next/dynamic"
 import Link from "next/link"
 import { HelpCircle, List, Lock, Map as MapIcon, MessageSquare, Navigation, Star } from "lucide-react"
@@ -27,7 +27,7 @@ const MapView = dynamic(() => import("./map-view"), {
 
 const INITIAL_FILTERS: Filters = {
   postcode: "",
-  distance: 5,
+  distance: 1,
   cuisine: "all",
 }
 
@@ -50,6 +50,7 @@ export function HalalFinder({ restaurants: allRestaurants }: HalalFinderProps) {
   const [locating, setLocating] = useState(false)
   const [locatedByGps, setLocatedByGps] = useState(false)
   const [locationError, setLocationError] = useState<string | null>(null)
+  const autoLocated = useRef(false)
 
   const cuisineOptions = useMemo(() => {
     const present = new Set(allRestaurants.map((r) => restaurantCuisineGroup(r)))
@@ -149,6 +150,16 @@ export function HalalFinder({ restaurants: allRestaurants }: HalalFinderProps) {
     )
   }
 
+  // On first load, try to search using the visitor's current location so
+  // results are relevant immediately. Runs once; users can still search by
+  // postcode if they deny permission.
+  useEffect(() => {
+    if (autoLocated.current) return
+    autoLocated.current = true
+    handleUseMyLocation()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
@@ -208,8 +219,6 @@ export function HalalFinder({ restaurants: allRestaurants }: HalalFinderProps) {
       </section>
 
       <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
-        <StatsBar restaurants={allRestaurants} />
-
         <div className="mb-4">
           <FilterChips value={chips} onChange={setChips} />
         </div>
@@ -310,6 +319,10 @@ export function HalalFinder({ restaurants: allRestaurants }: HalalFinderProps) {
               />
             </div>
           </div>
+        </div>
+
+        <div className="mt-10 border-t border-border pt-8">
+          <StatsBar restaurants={allRestaurants} />
         </div>
       </main>
     </div>
