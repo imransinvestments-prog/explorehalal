@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import dynamic from "next/dynamic"
 import Link from "next/link"
 import {
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   HelpCircle,
@@ -12,6 +13,7 @@ import {
   Map as MapIcon,
   MessageSquare,
   Navigation,
+  SlidersHorizontal,
   Star,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -75,6 +77,7 @@ export function HalalFinder({ restaurants: allRestaurants }: HalalFinderProps) {
   const [locationError, setLocationError] = useState<string | null>(null)
   const [pageSize, setPageSize] = useState<number | "all">(10)
   const [page, setPage] = useState(1)
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const autoLocated = useRef(false)
 
   const cuisineOptions = useMemo(() => {
@@ -243,17 +246,59 @@ export function HalalFinder({ restaurants: allRestaurants }: HalalFinderProps) {
       </header>
 
       <section className="border-b border-border bg-card/70 lg:sticky lg:top-0 lg:z-40 lg:[backdrop-filter:blur(8px)]">
-        <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6">
-          <SearchFilters
-            filters={filters}
-            onChange={setFilters}
-            onSearch={handleSearch}
-            onUseMyLocation={handleUseMyLocation}
-            locating={locating}
-            locationError={locationError}
-            cuisineOptions={cuisineOptions}
-            searching={searching}
-          />
+        <div className="mx-auto max-w-6xl px-4 py-3 sm:px-6">
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((v) => !v)}
+            aria-expanded={filtersOpen}
+            aria-controls="search-filters-panel"
+            className="flex w-full items-center gap-3 rounded-lg border border-border bg-background px-4 py-3 text-left transition-colors hover:bg-accent/10"
+          >
+            <SlidersHorizontal className="size-4 shrink-0 text-primary" aria-hidden="true" />
+            <span className="flex min-w-0 flex-col">
+              <span className="text-sm font-semibold text-foreground">
+                {filtersOpen ? "Hide filters" : "Search & filters"}
+              </span>
+              {!filtersOpen && (
+                <span className="truncate text-xs text-muted-foreground">
+                  {[
+                    locatedByGps
+                      ? "Near my location"
+                      : applied.postcode.trim()
+                        ? applied.postcode.trim()
+                        : "All areas",
+                    `within ${applied.distance} ${applied.distance === 1 ? "mile" : "miles"}`,
+                    applied.cuisine === "all" ? "all cuisines" : applied.cuisine,
+                  ].join(" · ")}
+                </span>
+              )}
+            </span>
+            <span className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-accent/10 px-2 py-1 text-xs font-medium text-muted-foreground">
+              {filtersOpen ? "Collapse" : "Expand"}
+              <ChevronDown
+                className={cn(
+                  "size-4 transition-transform",
+                  filtersOpen && "rotate-180",
+                )}
+                aria-hidden="true"
+              />
+            </span>
+          </button>
+
+          {filtersOpen && (
+            <div id="search-filters-panel" className="pt-4">
+              <SearchFilters
+                filters={filters}
+                onChange={setFilters}
+                onSearch={handleSearch}
+                onUseMyLocation={handleUseMyLocation}
+                locating={locating}
+                locationError={locationError}
+                cuisineOptions={cuisineOptions}
+                searching={searching}
+              />
+            </div>
+          )}
         </div>
       </section>
 
