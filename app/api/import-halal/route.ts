@@ -23,21 +23,21 @@ export async function GET(request: Request) {
   const supabase = createClient(supabaseUrl, supabaseRole);
 
   try {
-    // ✅ 1. Point directly to the core base scraper URL root structure to bypass 404 blocks
-    const baseUrl = "https://parse.bot";
-    const targetUrl = new URL(baseUrl);
+    // ✅ 1. Official Canonical Parse.bot System Action Routing Layout (Singular /scraper/)
+    const targetUrl = "https://parse.bot";
     
-    // ✅ 2. Pass your custom endpoint name and query variables directly as URL search parameters
-    targetUrl.searchParams.append("endpoint", "search_restaurants");
-    targetUrl.searchParams.append("location", targetCity);
-    targetUrl.searchParams.append("limit", "20"); 
-    
-    const response = await fetch(targetUrl.toString(), {
-      method: 'GET',
+    // ✅ 2. Fire the connection using POST to map options natively into the scraper engine
+    const response = await fetch(targetUrl, {
+      method: 'POST',
       headers: { 
         'X-API-Key': apiKey,
+        'Content-Type': 'application/json',
         'Accept': 'application/json'
-      }
+      },
+      body: JSON.stringify({
+        location: targetCity,
+        limit: 20 // Kept at 20 to safely execute well within your 297 remaining credit balance
+      })
     });
 
     const rawText = await response.text();
@@ -45,7 +45,7 @@ export async function GET(request: Request) {
     if (!rawText || rawText.trim() === "") {
       return NextResponse.json({ 
         error: "Parse API returned a completely blank response string.",
-        hint: "Double check your Parse project parameters setup configuration fields."
+        hint: "Double check your Parse dashboard workflow state parameters."
       }, { status: 500 });
     }
 
@@ -96,8 +96,7 @@ export async function GET(request: Request) {
       city: targetCity,
       total_found: targetRestaurants.length,
       newly_inserted: insertedCount,
-      duplicates_skipped: skippedCount,
-      debug_sample: targetRestaurants.slice(0, 1)
+      duplicates_skipped: skippedCount
     });
 
   } catch (error: any) {
