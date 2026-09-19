@@ -59,27 +59,27 @@ export async function GET(request: Request) {
 
     const data = JSON.parse(rawText);
     
-    // Safe Array Extraction layer
-    let targetRestaurants: any[] = [];
-    if (Array.isArray(data)) {
-      targetRestaurants = data;
-    } else if (data && typeof data === 'object') {
-      const plausibleArray = data.restaurants || data.results || data.data || data.items;
-      if (Array.isArray(plausibleArray)) {
-        targetRestaurants = plausibleArray;
-      } else {
-        const foundArray = Object.values(data).find(val => Array.isArray(val));
-        if (Array.isArray(foundArray)) {
-          targetRestaurants = foundArray;
-        } else {
-          targetRestaurants = [data];
-        }
+    // Safe Array Extraction layer.
+    // The Parse API nests the payload as { status, data: { restaurants: [...] } },
+    // so we recursively search the object tree for the first array of records.
+    const findRecordArray = (node: any, depth = 0): any[] | null => {
+      if (Array.isArray(node)) return node;
+      if (!node || typeof node !== 'object' || depth > 4) return null;
+      const preferred = node.restaurants || node.results || node.items;
+      if (Array.isArray(preferred)) return preferred;
+      for (const value of Object.values(node)) {
+        const found = findRecordArray(value, depth + 1);
+        if (found) return found;
       }
-    }
+      return null;
+    };
+
+    const targetRestaurants: any[] = findRecordArray(data) ?? [];
 
     let insertedCount = 0;
     let skippedCount = 0;
-    let databaseErrors: any[] = []; // 🔍 Array to hold database diagnostic details
+    const errors: string[] = [];
+    const today = new Date().toISOString().split('T')[0];
 
     for (const item of targetRestaurants) {
       if (!item || typeof item !== 'object' || !item.name) continue; 
@@ -88,23 +88,52 @@ export async function GET(request: Request) {
       const cleanAddr = (item.address || '').toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
       const matchKey = `${cleanName}_${cleanAddr}`;
 
-      // Force-stringify cuisine if it comes as an array to protect flat text columns
-      const cuisineString = Array.isArray(item.cuisine) 
-        ? item.cuisine.join(', ') 
-        : (typeof item.cuisine === 'string' ? item.cuisine : "Halal");
+      const lat = Number.parseFloat(item.latitude);
+      const lng = Number.parseFloat(item.longitude);
+      const ratingNum = Number.parseFloat(item.rating);
+      const reviewNum = Number.parseInt(item.review_count, 10);
+      const halalScore = Number.parseInt(item.halal_rank_score ?? item.halal_score, 10);
+      const willReturn = Number.parseFloat(item.will_return_percentage ?? item.will_return);
+      const googleRating = Number.parseFloat(item.google_rating);
+      const googleReviews = Number.parseInt(item.google_review_count, 10);
+
+      const addressParts = [item.address, item.city, item.state].filter(Boolean);
 
       const { error } = await supabase
         .from('restaurants')
         .upsert(
           {
             name: item.name,
-            address: item.address || "Address Not Listed",
-            postcode: "See Address",
-            cuisine_type: cuisineString,
-            certification_body: item.halal_description || "Zabihah Community Verified",
-            certification_status: item.halal_rank_tier || "Verified",
+            address: addressParts.length ? addressParts.join(', ') : "Address Not Listed",
+            postcode: item.state || "N/A",
+            latitude: Number.isFinite(lat) ? lat : 0,
+            longitude: Number.isFinite(lng) ? lng : 0,
+            cuisine_type: Array.isArray(item.cuisine) ? item.cuisine.join(', ') : (item.cuisine || "Halal"),
+            // The table's CHECK constraints only allow a fixed set of values.
+            // Zabihah is community-sourced data, so it maps to COMMUNITY / Other with a
+            // dedicated 'zabihah' certification_status that flags the source.
+            certification_body: "COMMUNITY",
+            certification_status: "zabihah",
+            certification_type: "Other",
+            rating: Number.isFinite(ratingNum) ? ratingNum : null,
+            review_count: Number.isFinite(reviewNum) ? reviewNum : null,
+            image_url: item.cover_image || null,
+            last_scraped_date: today,
             source: "Zabihah.com Parse Import",
-            match_key: matchKey
+            match_key: matchKey,
+            // Zabihah's richer halal detail, preserved on their own columns.
+            price: item.price ?? null,
+            halal_status: item.halal_status ?? null,
+            halal_description: item.halal_description ?? null,
+            alcohol_policy: item.alcohol_policy ?? item.alcohol ?? null,
+            halal_rank_score: Number.isFinite(halalScore) ? halalScore : null,
+            halal_rank_tier: item.halal_rank_tier ?? item.halal_tier ?? null,
+            hand_slaughtered: typeof item.hand_slaughtered === 'boolean' ? item.hand_slaughtered : null,
+            is_trending: typeof item.is_trending === 'boolean' ? item.is_trending : null,
+            will_return_percentage: Number.isFinite(willReturn) ? willReturn : null,
+            google_rating: Number.isFinite(googleRating) ? googleRating : null,
+            google_review_count: Number.isFinite(googleReviews) ? googleReviews : null,
+            business_hours: item.business_hours ?? item.hours ?? null,
           },
           { onConflict: 'match_key' }
         );
@@ -113,13 +142,7 @@ export async function GET(request: Request) {
         insertedCount++;
       } else {
         skippedCount++;
-        // 🔍 Log the error returned from Supabase directly
-        databaseErrors.push({
-          restaurant_name: item.name,
-          error_message: error.message,
-          error_details: error.details,
-          error_code: error.code
-        });
+        if (errors.length < 5) errors.push(`${item.name}: ${error.message}`);
       }
     }
 
@@ -128,9 +151,8 @@ export async function GET(request: Request) {
       city: targetCity,
       total_found: targetRestaurants.length,
       newly_inserted: insertedCount,
-      duplicates_or_errors_skipped: skippedCount,
-      supabase_diagnostic_logs: databaseErrors, // 🔍 View database blocks here
-      debug_raw_payload: data 
+      duplicates_skipped: skippedCount,
+      sample_errors: errors,
     });
 
   } catch (error: any) {
