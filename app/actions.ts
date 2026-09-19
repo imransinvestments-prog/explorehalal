@@ -11,9 +11,13 @@ import { fetchPlaceRating } from "@/lib/google-places.mjs"
 import {
   ADMIN_COOKIE,
   ADMIN_COOKIE_OPTIONS,
+  isAdmin,
   sessionToken,
   verifyPassword,
 } from "@/lib/admin-auth"
+import { fetchRestaurants } from "@/lib/restaurants-server"
+import { findDuplicateClusters } from "@/lib/dedupe"
+import type { Restaurant } from "@/lib/types"
 import { revalidatePath } from "next/cache"
 
 // ---------------------------------------------------------------------------
@@ -528,4 +532,105 @@ export async function importFromApi(
   }
 
   return base
+}
+
+// ---------------------------------------------------------------------------
+// Duplicate detection & removal (admin)
+// ---------------------------------------------------------------------------
+
+/** A single restaurant summarised for the de-dupe preview UI. */
+export interface DedupeEntry {
+  id: string
+  name: string
+  address: string
+  postcode: string
+  certification_body: string
+  rating: number | null
+  review_count: number | null
+  source: string | null
+}
+
+/** One group of duplicates: the row we keep plus the rows we'd remove. */
+export interface DedupeClusterView {
+  keep: DedupeEntry
+  remove: DedupeEntry[]
+}
+
+export interface DedupePreview {
+  totalRestaurants: number
+  clusters: DedupeClusterView[]
+  duplicateCount: number
+}
+
+function toDedupeEntry(r: Restaurant): DedupeEntry {
+  return {
+    id: r.id,
+    name: r.name,
+    address: r.address,
+    postcode: r.postcode,
+    certification_body: r.certification_body,
+    rating: r.rating ?? null,
+    review_count: r.review_count ?? null,
+    source: r.source ?? null,
+  }
+}
+
+/**
+ * Scan the whole table and return the duplicate clusters found by matching on
+ * postcode + shared name words. Read-only — nothing is deleted here, so the
+ * admin can review exactly what would be removed before confirming.
+ */
+export async function previewDuplicates(): Promise<DedupePreview> {
+  if (!(await isAdmin())) {
+    return { totalRestaurants: 0, clusters: [], duplicateCount: 0 }
+  }
+
+  const restaurants = await fetchRestaurants()
+  const clusters = findDuplicateClusters(restaurants)
+
+  return {
+    totalRestaurants: restaurants.length,
+    duplicateCount: clusters.reduce((sum, c) => sum + c.remove.length, 0),
+    clusters: clusters.map((c) => ({
+      keep: toDedupeEntry(c.keep),
+      remove: c.remove.map(toDedupeEntry),
+    })),
+  }
+}
+
+export interface DedupeResult {
+  deleted: number
+  error?: string
+}
+
+/**
+ * Delete the given restaurant rows. The ids come from a previewDuplicates()
+ * result the admin has reviewed. Uses the service-role client (RLS-bypassing),
+ * so it stays admin-gated and server-only.
+ */
+export async function deleteDuplicates(ids: string[]): Promise<DedupeResult> {
+  if (!(await isAdmin())) {
+    return { deleted: 0, error: "Not authorised." }
+  }
+
+  const clean = [...new Set(ids)].filter((id) => typeof id === "string" && id.length > 0)
+  if (clean.length === 0) return { deleted: 0 }
+
+  const supabase = createAdminClient()
+
+  // Delete in batches to keep each request well within PostgREST limits.
+  const BATCH = 200
+  let deleted = 0
+  for (let i = 0; i < clean.length; i += BATCH) {
+    const batch = clean.slice(i, i + BATCH)
+    const { error, count } = await supabase
+      .from("restaurants")
+      .delete({ count: "exact" })
+      .in("id", batch)
+    if (error) return { deleted, error: error.message }
+    deleted += count ?? batch.length
+  }
+
+  revalidatePath("/")
+  return { deleted }
 }

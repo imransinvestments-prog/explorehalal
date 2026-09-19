@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { ArrowLeft, Upload, Search, MapPin, UtensilsCrossed, CalendarClock, LogOut, CloudDownload, FileSpreadsheet } from "lucide-react"
+import { ArrowLeft, Upload, Search, MapPin, UtensilsCrossed, CalendarClock, LogOut, CloudDownload, FileSpreadsheet, Copy } from "lucide-react"
 import { isAdmin } from "@/lib/admin-auth"
 import { getSearchAnalytics } from "@/lib/analytics"
 import { adminLogout } from "@/app/actions"
@@ -78,6 +78,12 @@ export default async function AdminPage() {
               <Link href="/admin/import">
                 <CloudDownload className="size-4" />
                 Import from API
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/admin/dedupe">
+                <Copy className="size-4" />
+                Remove duplicates
               </Link>
             </Button>
             <Button asChild variant="outline">
