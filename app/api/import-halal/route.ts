@@ -26,7 +26,7 @@ export async function GET(request: Request) {
     const db = client.db();
     const collection = db.collection('restaurants');
 
-    // Fetch open source raw dataset
+    // Fetch dataset safely
     const response = await fetch('https://githubusercontent.com');
     if (!response.ok) throw new Error('Failed to fetch dataset from GitHub');
     const rawRestaurants = await response.json();
@@ -46,32 +46,32 @@ export async function GET(request: Request) {
       return matchesCity && isHalal;
     });
 
-    // Run clean upsert loop
+    // Run safe de-duplication loop without using nested dollar-sign strings
     for (const item of filteredSpots) {
       const postcode = item.postcode || item.postal_code || "Unknown";
       const matchKey = generateMatchKey(item.name, postcode);
       const fullAddress = item.address || `${item.street || ''} ${item.housenumber || ''}, ${item.city || ''}`.trim();
 
-      const result = await collection.updateOne(
-        { match_key: matchKey },
-        {
-          \$setOnInsert: {
-            name: item.name || "Halal Restaurant",
-            address: fullAddress || "Address Not Provided",
-            postcode: postcode,
-            cuisine_type: item.cuisine || "Halal",
-            certification_body: "Unspecified",
-            certification_status: "Self-declared",
-            source: "GitHub Open Dataset Import",
-            match_key: matchKey,
-            createdAt: new Date()
-          }
-        },
-        { upsert: true }
-      );
+      // Check if it already exists in the database
+      const existing = await collection.findOne({ match_key: matchKey });
 
-      if (result.upsertedCount > 0) insertedCount++;
-      else skippedCount++;
+      if (!existing) {
+        // If it doesn't exist, insert it completely clean
+        await collection.insertOne({
+          name: item.name || "Halal Restaurant",
+          address: fullAddress || "Address Not Provided",
+          postcode: postcode,
+          cuisine_type: item.cuisine || "Halal",
+          certification_body: "Unspecified",
+          certification_status: "Self-declared",
+          source: "GitHub Open Dataset Import",
+          match_key: matchKey,
+          createdAt: new Date()
+        });
+        insertedCount++;
+      } else {
+        skippedCount++;
+      }
     }
 
     return NextResponse.json({
