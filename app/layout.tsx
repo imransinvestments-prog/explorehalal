@@ -5,8 +5,9 @@ import './globals.css'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 
-const siteUrl =
-  process.env.NEXT_PUBLIC_SITE_URL ?? 'https://explorehalal.vercel.app'
+import { getSiteUrl } from '@/lib/site-url'
+
+const siteUrl = getSiteUrl()
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -51,6 +52,7 @@ export const metadata: Metadata = {
     'halal food finder',
     'halal restaurant map',
   ],
+  manifest: '/manifest.json',
   alternates: {
     canonical: '/',
   },
