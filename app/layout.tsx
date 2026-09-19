@@ -5,10 +5,81 @@ import './globals.css'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ?? 'https://explorehalal.vercel.app'
+
 export const metadata: Metadata = {
-  title: 'UK Halal Finder — HMC & HFA Certified Restaurants',
+  metadataBase: new URL(siteUrl),
+  title: {
+    default:
+      'Explore Halal — Find HMC & HFA Certified Halal Restaurants Near You',
+    template: '%s | Explore Halal',
+  },
   description:
-    'Search HMC and HFA certified halal restaurants across the UK by postcode, distance, and cuisine.',
+    'Explore Halal helps you find certified halal restaurants, takeaways, and eateries near you. Search HMC and HFA certified halal food by location, distance, and cuisine — from halal burgers, grills, and steakhouses to curry, kebabs, fried chicken, pizza, and desserts.',
+  applicationName: 'Explore Halal',
+  authors: [{ name: 'Explore Halal' }],
+  category: 'food',
+  keywords: [
+    'halal',
+    'halal food',
+    'halal restaurants',
+    'halal restaurants near me',
+    'halal dining',
+    'halal eateries',
+    'halal takeaway',
+    'halal takeaways near me',
+    'halal food near me',
+    'HMC certified',
+    'HFA certified',
+    'halal certified restaurants',
+    'zabihah',
+    'muslim friendly restaurants',
+    'halal burgers',
+    'halal grill',
+    'halal steakhouse',
+    'halal chicken',
+    'halal curry',
+    'halal kebab',
+    'halal pizza',
+    'halal breakfast',
+    'halal desserts',
+    'halal fine dining',
+    'halal street food',
+    'best halal restaurants',
+    'where to eat halal',
+    'halal food finder',
+    'halal restaurant map',
+  ],
+  alternates: {
+    canonical: '/',
+  },
+  openGraph: {
+    type: 'website',
+    siteName: 'Explore Halal',
+    url: siteUrl,
+    title: 'Explore Halal — Find HMC & HFA Certified Halal Restaurants Near You',
+    description:
+      'Discover certified halal restaurants, takeaways, and eateries near you. Search HMC and HFA certified halal food by location, distance, and cuisine.',
+    locale: 'en_GB',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Explore Halal — Certified Halal Restaurants Near You',
+    description:
+      'Find HMC and HFA certified halal restaurants, takeaways, and dining spots by location, distance, and cuisine.',
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+      'max-video-preview': -1,
+    },
+  },
   generator: 'v0.app',
   icons: {
     icon: [
