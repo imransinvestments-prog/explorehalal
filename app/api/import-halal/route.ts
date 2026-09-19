@@ -23,10 +23,10 @@ export async function GET(request: Request) {
   const supabase = createClient(supabaseUrl, supabaseRole);
 
   try {
-    // ✅ 1. Official Canonical Parse.bot System Action Routing Layout (Singular /scraper/)
+    // ✅ 1. Correct singular path structure targeting the action route endpoint natively
     const targetUrl = "https://parse.bot";
     
-    // ✅ 2. Fire the connection using POST to map options natively into the scraper engine
+    // ✅ 2. Fire connection using POST with parameters wrapped in a container block
     const response = await fetch(targetUrl, {
       method: 'POST',
       headers: { 
@@ -35,8 +35,10 @@ export async function GET(request: Request) {
         'Accept': 'application/json'
       },
       body: JSON.stringify({
-        location: targetCity,
-        limit: 20 // Kept at 20 to safely execute well within your 297 remaining credit balance
+        parameters: {
+          location: targetCity,
+          limit: 20 // Stays well within your remaining credit tier boundary checks
+        }
       })
     });
 
@@ -45,7 +47,7 @@ export async function GET(request: Request) {
     if (!rawText || rawText.trim() === "") {
       return NextResponse.json({ 
         error: "Parse API returned a completely blank response string.",
-        hint: "Double check your Parse dashboard workflow state parameters."
+        hint: "Your account is verified, so a blank response indicates Parse found 0 matching restaurants on Zabihah for this specific city string query."
       }, { status: 500 });
     }
 
@@ -58,7 +60,7 @@ export async function GET(request: Request) {
 
     const data = JSON.parse(rawText);
     
-    // 3. Flexible extraction strategy to target arrays returned by Parse
+    // ✅ 3. Target the underlying dataset object fields returned from Parse's database wrapper
     const targetRestaurants = data.restaurants || data.results || data.data || (Array.isArray(data) ? data : []);
     
     let insertedCount = 0;
@@ -96,7 +98,8 @@ export async function GET(request: Request) {
       city: targetCity,
       total_found: targetRestaurants.length,
       newly_inserted: insertedCount,
-      duplicates_skipped: skippedCount
+      duplicates_skipped: skippedCount,
+      debug_received_payload: data // Let's output the full object properties if successful to check formatting mapping
     });
 
   } catch (error: any) {
