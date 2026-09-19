@@ -25,45 +25,60 @@ export async function GET(request: Request) {
   const supabase = createClient(supabaseUrl, supabaseRole);
 
   try {
-    // ✅ 1. Rebuild the exact URL format specified by the Parse dashboard snippet
-    const baseUrl = "https://api.parse.bot/scraper/5f5c1663-acb9-42c4-a4ad-386c0f7013aa/search_restaurants";
+    const baseUrl = "https://parse.bot";
     const targetUrl = new URL(baseUrl);
     
-    // ✅ 2. Append parameters directly onto the URL search queries
     targetUrl.searchParams.append("location", targetCity.trim());
-    targetUrl.searchParams.append("limit", "20"); // Adjusted safely within your credit tier bounds
+    targetUrl.searchParams.append("limit", "20"); 
 
-    // ✅ 3. Execute an authenticated GET connection mapping perfectly to your curl footprint
     const response = await fetch(targetUrl.toString(), {
       method: 'GET',
       headers: { 
         'X-API-Key': apiKey,
         'Accept': 'application/json'
       },
-      cache: 'no-store' // Bypasses Vercel edge-network proxy storage caches completely
+      cache: 'no-store' 
     });
 
     const rawText = await response.text();
 
-    let data;
     if (!rawText || rawText.trim() === "") {
-      data = { restaurants: [] };
-    } else if (rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
+      return NextResponse.json({ error: "Parse API returned an empty response string." }, { status: 500 });
+    }
+
+    if (rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
       return NextResponse.json({
-        error: "The API endpoint configuration returned a webpage layout rather than clean data rows.",
+        error: "The API endpoint configuration returned a webpage layout rather than clean data.",
         htmlSnippet: rawText.substring(0, 400)
       }, { status: 500 });
-    } else {
-      data = JSON.parse(rawText);
     }
+
+    const data = JSON.parse(rawText);
     
-    const targetRestaurants = data.restaurants || data.results || data.data || (Array.isArray(data) ? data : []);
-    
+    // ✅ Bulletproof Array Locator: Safely extracts the valid array regardless of Parse's field naming choice
+    let targetRestaurants: any[] = [];
+    if (Array.isArray(data)) {
+      targetRestaurants = data;
+    } else if (data && typeof data === 'object') {
+      // Prioritize known array fields returned by Parse's data layer
+      const plausibleArray = data.restaurants || data.results || data.data || data.items;
+      if (Array.isArray(plausibleArray)) {
+        targetRestaurants = plausibleArray;
+      } else {
+        // Fallback: Dynamically search through object properties to find any nested list array
+        const foundArray = Object.values(data).find(val => Array.isArray(val));
+        if (Array.isArray(foundArray)) {
+          targetRestaurants = foundArray;
+        }
+      }
+    }
+
     let insertedCount = 0;
     let skippedCount = 0;
 
+    // Process the validated list array smoothly
     for (const item of targetRestaurants) {
-      if (!item.name) continue; 
+      if (!item || typeof item !== 'object' || !item.name) continue; 
 
       const cleanName = item.name.toLowerCase().replace(/[^a-z0-9]/g, '');
       const cleanAddr = (item.address || '').toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
@@ -95,7 +110,7 @@ export async function GET(request: Request) {
       total_found: targetRestaurants.length,
       newly_inserted: insertedCount,
       duplicates_skipped: skippedCount,
-      debug_raw_api_response: data
+      raw_api_response_shape: data // Let's output the top-level keys to double check layout data strings
     });
 
   } catch (error: any) {
