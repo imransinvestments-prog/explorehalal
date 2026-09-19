@@ -36,19 +36,48 @@ function normalizeRestaurant(row: Restaurant): Restaurant {
   }
 }
 
+/**
+ * PostgREST caps every response at a fixed maximum number of rows (1000 by
+ * default), so a single `.select()` silently truncates the table. We page
+ * through with `.range()` until a short page signals the end. Without this,
+ * only the first 1000 rows (alphabetically by name) ever reach the UI or the
+ * CSV/XLSX export.
+ */
+const PAGE_SIZE = 1000
+
 export async function fetchRestaurants(): Promise<Restaurant[]> {
   const supabase = await createClient()
 
   let lastError = ""
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const { data, error } = await supabase.from("restaurants").select(COLUMNS).order("name", { ascending: true })
+    const all: Restaurant[] = []
+    let from = 0
+    let failed = false
 
-    if (!error) {
-      return ((data ?? []) as Restaurant[]).map(normalizeRestaurant)
+    for (;;) {
+      const { data, error } = await supabase
+        .from("restaurants")
+        .select(COLUMNS)
+        .order("name", { ascending: true })
+        .range(from, from + PAGE_SIZE - 1)
+
+      if (error) {
+        lastError = error.message
+        console.log(`[v0] fetchRestaurants attempt ${attempt}/${MAX_ATTEMPTS} failed:`, error.message)
+        failed = true
+        break
+      }
+
+      const page = (data ?? []) as Restaurant[]
+      all.push(...page)
+
+      if (page.length < PAGE_SIZE) break
+      from += PAGE_SIZE
     }
 
-    lastError = error.message
-    console.log(`[v0] fetchRestaurants attempt ${attempt}/${MAX_ATTEMPTS} failed:`, error.message)
+    if (!failed) {
+      return all.map(normalizeRestaurant)
+    }
 
     if (attempt < MAX_ATTEMPTS) {
       await new Promise((resolve) => setTimeout(resolve, attempt * 500))
