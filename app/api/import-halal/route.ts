@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { MongoClient } from 'mongodb'; // Switch to Supabase/Postgres if needed
+import { MongoClient } from 'mongodb';
 
 function generateMatchKey(name: string, postcode: string) {
   const cleanName = (name || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/\b(the|restaurant|cafe|grill|bar|kitchen|ltd)\b/g, '');
@@ -8,7 +8,6 @@ function generateMatchKey(name: string, postcode: string) {
 }
 
 export async function GET(request: Request) {
-  // Get city parameter from the URL
   const { searchParams } = new URL(request.url);
   const targetCity = searchParams.get('city');
 
@@ -16,7 +15,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=London' }, { status: 400 });
   }
 
-  // Ensure DATABASE_URL is set in your Vercel Environment Variables
   if (!process.env.DATABASE_URL) {
     return NextResponse.json({ error: 'DATABASE_URL environment variable missing' }, { status: 500 });
   }
@@ -28,7 +26,7 @@ export async function GET(request: Request) {
     const db = client.db();
     const collection = db.collection('restaurants');
 
-    // Fetch raw global data from GitHub
+    // Fetch open source raw dataset
     const response = await fetch('https://githubusercontent.com');
     if (!response.ok) throw new Error('Failed to fetch dataset from GitHub');
     const rawRestaurants = await response.json();
@@ -36,7 +34,7 @@ export async function GET(request: Request) {
     let insertedCount = 0;
     let skippedCount = 0;
 
-    // Filter by city and halal keywords
+    // Filter locations by city and halal keywords
     const filteredSpots = rawRestaurants.filter((item: any) => {
       const itemCity = (item.city || '').toLowerCase();
       const name = (item.name || '').toLowerCase();
@@ -48,7 +46,7 @@ export async function GET(request: Request) {
       return matchesCity && isHalal;
     });
 
-    // Run upsert de-duplication loop
+    // Run clean upsert loop
     for (const item of filteredSpots) {
       const postcode = item.postcode || item.postal_code || "Unknown";
       const matchKey = generateMatchKey(item.name, postcode);
