@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   const targetCity = searchParams.get('city');
 
   if (!targetCity) {
-    return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=Manchester' }, { status: 400 });
+    return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=Chicago' }, { status: 400 });
   }
 
   const apiKey = process.env.PARSE_API_KEY;
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
   const supabase = createClient(supabaseUrl, supabaseRole);
 
   try {
-    const baseUrl = "https://parse.bot";
+    const baseUrl = "https://api.parse.bot/scraper/7d525839-78db-4e5b-a6cb-7838a2d1a23e/search_restaurants";
     const targetUrl = new URL(baseUrl);
     
     targetUrl.searchParams.append("location", targetCity.trim());
@@ -44,7 +44,10 @@ export async function GET(request: Request) {
     const rawText = await response.text();
 
     if (!rawText || rawText.trim() === "") {
-      return NextResponse.json({ error: "Parse API returned an empty response string." }, { status: 500 });
+      return NextResponse.json({ 
+        error: "Parse API returned an empty response string.",
+        hint: "Double check your PARSE_API_KEY in Vercel to ensure it matches perfectly."
+      }, { status: 500 });
     }
 
     if (rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
@@ -56,19 +59,27 @@ export async function GET(request: Request) {
 
     const data = JSON.parse(rawText);
     
-    // ✅ Match the deep nesting structure visible on your screen
+    // Safe Array Extraction layer
     let targetRestaurants: any[] = [];
-    if (data && data.data && Array.isArray(data.data.restaurants)) {
-      targetRestaurants = data.data.restaurants;
-    } else if (data && Array.isArray(data.restaurants)) {
-      targetRestaurants = data.restaurants;
-    } else if (Array.isArray(data)) {
+    if (Array.isArray(data)) {
       targetRestaurants = data;
+    } else if (data && typeof data === 'object') {
+      const plausibleArray = data.restaurants || data.results || data.data || data.items;
+      if (Array.isArray(plausibleArray)) {
+        targetRestaurants = plausibleArray;
+      } else {
+        const foundArray = Object.values(data).find(val => Array.isArray(val));
+        if (Array.isArray(foundArray)) {
+          targetRestaurants = foundArray;
+        } else {
+          targetRestaurants = [data];
+        }
+      }
     }
 
     let insertedCount = 0;
     let skippedCount = 0;
-    let databaseErrors: any[] = []; 
+    let databaseErrors: any[] = []; // 🔍 Array to hold database diagnostic details
 
     for (const item of targetRestaurants) {
       if (!item || typeof item !== 'object' || !item.name) continue; 
@@ -77,6 +88,7 @@ export async function GET(request: Request) {
       const cleanAddr = (item.address || '').toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
       const matchKey = `${cleanName}_${cleanAddr}`;
 
+      // Force-stringify cuisine if it comes as an array to protect flat text columns
       const cuisineString = Array.isArray(item.cuisine) 
         ? item.cuisine.join(', ') 
         : (typeof item.cuisine === 'string' ? item.cuisine : "Halal");
@@ -101,11 +113,12 @@ export async function GET(request: Request) {
         insertedCount++;
       } else {
         skippedCount++;
-        databaseErrors.push({ 
-          restaurant: item.name, 
-          message: error.message, 
-          details: error.details,
-          code: error.code 
+        // 🔍 Log the error returned from Supabase directly
+        databaseErrors.push({
+          restaurant_name: item.name,
+          error_message: error.message,
+          error_details: error.details,
+          error_code: error.code
         });
       }
     }
@@ -116,7 +129,8 @@ export async function GET(request: Request) {
       total_found: targetRestaurants.length,
       newly_inserted: insertedCount,
       duplicates_or_errors_skipped: skippedCount,
-      supabase_diagnostic_logs: databaseErrors
+      supabase_diagnostic_logs: databaseErrors, // 🔍 View database blocks here
+      debug_raw_payload: data 
     });
 
   } catch (error: any) {
