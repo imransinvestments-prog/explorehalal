@@ -6,6 +6,13 @@ import { formatRelative } from "@/lib/format-date"
 import { isAdmin } from "@/lib/admin-auth"
 import { DeleteButton } from "@/components/forum/delete-button"
 
+export const metadata = {
+  title: "Halal Food Forum — Reviews, Recommendations & Discussion",
+  description:
+    "Join the Explore Halal community forum to share halal restaurant reviews, ask for recommendations, and discuss the best halal food, takeaways, and dining spots near you.",
+  alternates: { canonical: "/forum" },
+}
+
 export const dynamic = "force-dynamic"
 
 type ThreadRow = {
