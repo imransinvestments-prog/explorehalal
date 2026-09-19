@@ -9,7 +9,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=London' }, { status: 400 });
   }
 
-  // Ensure your free Parse API key is added to your Vercel Dashboard alongside your Supabase keys
   if (!process.env.PARSE_API_KEY || !process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json({ error: 'Required environment variables are missing' }, { status: 500 });
   }
@@ -20,10 +19,12 @@ export async function GET(request: Request) {
   );
 
   try {
-    // 1. Query the live Parse.bot Zabihah mirror (Returns up to 300 restaurants per city)
-    const url = `https://parse.bot${encodeURIComponent(targetCity)}`;
+    // Dynamically building the path arrays using safe URL parameters to avoid mobile copy-paste bugs
+    const targetUrl = new URL("https://parse.bot");
+    targetUrl.searchParams.append("limit", "100");
+    targetUrl.searchParams.append("location", targetCity);
     
-    const response = await fetch(url, {
+    const response = await fetch(targetUrl.toString(), {
       headers: { 'X-API-Key': process.env.PARSE_API_KEY }
     });
 
@@ -34,9 +35,7 @@ export async function GET(request: Request) {
     let insertedCount = 0;
     let skippedCount = 0;
 
-    // 2. Map fields directly into your exact Supabase table layout
     for (const item of targetRestaurants) {
-      // Build an explicit matching key format using lower-case letters & digits
       const cleanName = item.name.toLowerCase().replace(/[^a-z0-9]/g, '');
       const cleanAddr = (item.address || '').toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
       const matchKey = `${cleanName}_${cleanAddr}`;
