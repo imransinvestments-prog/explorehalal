@@ -8,9 +8,10 @@ export async function GET(request: Request) {
   const targetCity = searchParams.get('city');
 
   if (!targetCity) {
-    return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=Chicago' }, { status: 400 });
+    return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=Manchester' }, { status: 400 });
   }
 
+  // ✅ Reads securely from Vercel's Dashboard Environment Variables system
   const apiKey = process.env.PARSE_API_KEY;
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -25,14 +26,12 @@ export async function GET(request: Request) {
   const supabase = createClient(supabaseUrl, supabaseRole);
 
   try {
-    // ✅ 1. Updated with your exact new working scraper ID
-    const baseUrl = "https://api.parse.bot/scraper/7d525839-78db-4e5b-a6cb-7838a2d1a23e/search_restaurants";
+    const baseUrl = "https://parse.bot";
     const targetUrl = new URL(baseUrl);
     
     targetUrl.searchParams.append("location", targetCity.trim());
     targetUrl.searchParams.append("limit", "20"); 
 
-    // ✅ 2. Integrated the mandatory API-Snapshot-Version header from your curl
     const response = await fetch(targetUrl.toString(), {
       method: 'GET',
       headers: { 
@@ -46,10 +45,7 @@ export async function GET(request: Request) {
     const rawText = await response.text();
 
     if (!rawText || rawText.trim() === "") {
-      return NextResponse.json({ 
-        error: "Parse API returned an empty response string.",
-        hint: "Double check your PARSE_API_KEY in Vercel to ensure it matches perfectly."
-      }, { status: 500 });
+      return NextResponse.json({ error: "Parse API returned an empty response string." }, { status: 500 });
     }
 
     if (rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
@@ -61,26 +57,21 @@ export async function GET(request: Request) {
 
     const data = JSON.parse(rawText);
     
-    // Safe Array Extraction layer
     let targetRestaurants: any[] = [];
-    if (Array.isArray(data)) {
+    if (data && data.data && Array.isArray(data.data.restaurants)) {
+      targetRestaurants = data.data.restaurants;
+    } else if (Array.isArray(data.restaurants)) {
+      targetRestaurants = data.restaurants;
+    } else if (Array.isArray(data)) {
       targetRestaurants = data;
     } else if (data && typeof data === 'object') {
-      const plausibleArray = data.restaurants || data.results || data.data || data.items;
-      if (Array.isArray(plausibleArray)) {
-        targetRestaurants = plausibleArray;
-      } else {
-        const foundArray = Object.values(data).find(val => Array.isArray(val));
-        if (Array.isArray(foundArray)) {
-          targetRestaurants = foundArray;
-        } else {
-          targetRestaurants = [data];
-        }
-      }
+      const fallback = data.results || data.data || data.items;
+      targetRestaurants = Array.isArray(fallback) ? fallback : [data];
     }
 
     let insertedCount = 0;
     let skippedCount = 0;
+    let databaseErrors: any[] = []; 
 
     for (const item of targetRestaurants) {
       if (!item || typeof item !== 'object' || !item.name) continue; 
@@ -89,6 +80,10 @@ export async function GET(request: Request) {
       const cleanAddr = (item.address || '').toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
       const matchKey = `${cleanName}_${cleanAddr}`;
 
+      const cuisineString = Array.isArray(item.cuisine) 
+        ? item.cuisine.join(', ') 
+        : (typeof item.cuisine === 'string' ? item.cuisine : "Halal");
+
       const { error } = await supabase
         .from('restaurants')
         .upsert(
@@ -96,7 +91,7 @@ export async function GET(request: Request) {
             name: item.name,
             address: item.address || "Address Not Listed",
             postcode: "See Address",
-            cuisine_type: Array.isArray(item.cuisine) ? item.cuisine.join(', ') : (item.cuisine || "Halal"),
+            cuisine_type: cuisineString,
             certification_body: item.halal_description || "Zabihah Community Verified",
             certification_status: item.halal_rank_tier || "Verified",
             source: "Zabihah.com Parse Import",
@@ -105,8 +100,17 @@ export async function GET(request: Request) {
           { onConflict: 'match_key' }
         );
 
-      if (!error) insertedCount++;
-      else skippedCount++;
+      if (!error) {
+        insertedCount++;
+      } else {
+        skippedCount++;
+        databaseErrors.push({ 
+          restaurant: item.name, 
+          message: error.message, 
+          details: error.details,
+          code: error.code 
+        });
+      }
     }
 
     return NextResponse.json({
@@ -114,8 +118,9 @@ export async function GET(request: Request) {
       city: targetCity,
       total_found: targetRestaurants.length,
       newly_inserted: insertedCount,
-      duplicates_skipped: skippedCount,
-      debug_raw_payload: data 
+      duplicates_or_errors_skipped: skippedCount,
+      supabase_diagnostic_logs: databaseErrors, 
+      debug_raw_api_response: data
     });
 
   } catch (error: any) {
