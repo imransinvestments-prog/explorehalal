@@ -3,15 +3,19 @@ import type { Restaurant } from "./types"
 /**
  * Duplicate detection for the restaurants table.
  *
- * Two rows are treated as the same venue when they share the SAME address.
- * Addresses are normalised (lowercased, punctuation stripped, whitespace
- * collapsed) before comparison so trivial formatting differences ("12 High St."
- * vs "12 High Street") that are otherwise identical still group together only
- * when they truly match. Rows with a blank address are never grouped.
+ * Two rows are treated as the same venue when they resolve to the same physical
+ * location. Real-world address strings for the same place are written many
+ * different ways ("226 Great West Road, London, Greater London, TW5 9AW" vs
+ * "226 Great West Rd, Hounslow TW5 9AW"), so exact string comparison misses
+ * obvious duplicates. Instead we build a location key from the two most stable
+ * parts of an address: the postcode and the building/house number. When both
+ * are present that key is used; otherwise we fall back to a fully normalised
+ * address string so rows without a postcode can still match on identical text.
  */
 
 /**
- * Normalise an address for grouping: lowercase, strip punctuation, collapse
+ * Normalise an address for grouping: lowercase, expand a few common street-type
+ * abbreviations (rd -> road, st -> street, ...), strip punctuation, collapse
  * runs of whitespace and trim. Returns an empty string when there is nothing
  * meaningful to compare (such rows are excluded from duplicate detection).
  */
@@ -21,11 +25,52 @@ export function normalizeAddress(address: string | null | undefined): string {
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim()
+    .replace(/\brd\b/g, "road")
+    .replace(/\bst\b/g, "street")
+    .replace(/\bave\b/g, "avenue")
+    .replace(/\bln\b/g, "lane")
+    .replace(/\bdr\b/g, "drive")
+    .replace(/\bpl\b/g, "place")
+    .replace(/\bct\b/g, "court")
 }
 
-/** Normalise a postcode for display/secondary comparison: uppercase, no spaces. */
-export function normalizePostcode(postcode: string): string {
+/** Normalise a postcode for comparison: uppercase, no spaces. */
+export function normalizePostcode(postcode: string | null | undefined): string {
   return (postcode ?? "").toUpperCase().replace(/\s+/g, "")
+}
+
+/**
+ * Extract the leading building/house number from an address, e.g.
+ * "226 Great West Rd" -> "226" and "41-43 Lisson Grove" -> "41". Returns an
+ * empty string when the address does not start with a number.
+ */
+export function houseNumber(address: string | null | undefined): string {
+  const match = (address ?? "").trim().match(/^(\d+)/)
+  return match ? match[1] : ""
+}
+
+/**
+ * A UK postcode can appear inside the free-text address instead of the postcode
+ * column. Pull the last postcode-looking token out of an address so we can
+ * still key on it when the dedicated postcode field is blank.
+ */
+function postcodeFromAddress(address: string | null | undefined): string {
+  const matches = (address ?? "").toUpperCase().match(/[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}/g)
+  return matches && matches.length > 0 ? normalizePostcode(matches[matches.length - 1]) : ""
+}
+
+/**
+ * Build the location key used to group duplicates. Prefers postcode + house
+ * number (stable across formatting differences); falls back to the normalised
+ * full address when a postcode is unavailable. Returns an empty string when
+ * there is nothing meaningful to compare.
+ */
+export function locationKey(restaurant: Restaurant): string {
+  const postcode = normalizePostcode(restaurant.postcode) || postcodeFromAddress(restaurant.address)
+  const number = houseNumber(restaurant.address)
+  if (postcode && number) return `pc:${postcode}|no:${number}`
+  const normalized = normalizeAddress(restaurant.address)
+  return normalized ? `addr:${normalized}` : ""
 }
 
 /**
@@ -78,24 +123,25 @@ export interface DuplicateCluster {
 }
 
 /**
- * Group restaurants into duplicate clusters by normalised address. Every set of
- * two or more rows that share the same normalised address becomes one cluster;
- * within it the most complete/trusted row is kept and the rest are flagged for
- * removal. Rows with a blank address are ignored.
+ * Group restaurants into duplicate clusters by location key (postcode + house
+ * number, falling back to normalised full address). Every set of two or more
+ * rows that share the same key becomes one cluster; within it the most
+ * complete/trusted row is kept and the rest are flagged for removal. Rows with
+ * no usable address are ignored.
  */
 export function findDuplicateClusters(restaurants: Restaurant[]): DuplicateCluster[] {
-  const byAddress = new Map<string, Restaurant[]>()
+  const byLocation = new Map<string, Restaurant[]>()
   for (const r of restaurants) {
-    const key = normalizeAddress(r.address)
+    const key = locationKey(r)
     if (!key) continue
-    const bucket = byAddress.get(key)
+    const bucket = byLocation.get(key)
     if (bucket) bucket.push(r)
-    else byAddress.set(key, [r])
+    else byLocation.set(key, [r])
   }
 
   const clusters: DuplicateCluster[] = []
 
-  for (const group of byAddress.values()) {
+  for (const group of Array.from(byLocation.values())) {
     if (group.length < 2) continue
     const keep = pickCanonical(group)
     clusters.push({
