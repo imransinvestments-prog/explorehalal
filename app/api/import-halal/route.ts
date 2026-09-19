@@ -5,7 +5,6 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const targetCity = searchParams.get('city');
 
-  // 1. Verify input city is present
   if (!targetCity) {
     return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=London' }, { status: 400 });
   }
@@ -14,7 +13,6 @@ export async function GET(request: Request) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  // 2. Safeguard checking for configuration keys on Vercel
   if (!apiKey || !supabaseUrl || !supabaseRole) {
     return NextResponse.json({ 
       error: 'Required environment variables are completely missing inside Vercel.',
@@ -25,50 +23,46 @@ export async function GET(request: Request) {
   const supabase = createClient(supabaseUrl, supabaseRole);
 
   try {
-    // ✅ The exact endpoint URL from your Parse dashboard
-    const targetUrl = "https://parse.bot";
+    // ✅ 1. Reverted to standard Parse.bot GET endpoint path format
+    const baseUrl = "https://parse.bot";
+    const targetUrl = new URL(baseUrl);
     
-    // ✅ Fire the request using a POST method structure as required by the marketplace tool
-    const response = await fetch(targetUrl, {
-      method: 'POST',
+    // ✅ 2. Append parameters directly as standard URL query strings
+    targetUrl.searchParams.append("location", targetCity);
+    targetUrl.searchParams.append("limit", "20"); // Safely stay well within credit limits
+    
+    const response = await fetch(targetUrl.toString(), {
+      method: 'GET',
       headers: { 
         'X-API-Key': apiKey,
-        'Content-Type': 'application/json',
         'Accept': 'application/json'
-      },
-      body: JSON.stringify({
-        location: targetCity,
-        limit: 50
-      })
+      }
     });
 
     const rawText = await response.text();
 
-    // Catch if Parse.bot is dropping requests or returning completely empty string payloads
     if (!rawText || rawText.trim() === "") {
       return NextResponse.json({ 
         error: "Parse API returned a completely blank response string.",
-        hint: "Double check your Parse dashboard panel to ensure your account has active data query credits remaining."
+        hint: "Check your query arguments or test the endpoint inside the Parse.bot panel directly to verify data availability."
       }, { status: 500 });
     }
 
-    // Catch if Parse.bot routes to an error HTML layout page instead of data rows
     if (rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
       return NextResponse.json({
-        error: "The scraper pipeline returned a webpage layout instead of structured JSON data.",
+        error: "The API endpoint configuration returned a webpage layout rather than clean data rows.",
         htmlSnippet: rawText.substring(0, 400)
       }, { status: 500 });
     }
 
     const data = JSON.parse(rawText);
     
-    // Fallback options to unpack data array depending on the exact object structure Parse maps back
+    // ✅ 3. Flexible extraction strategy to target arrays returned by Parse
     const targetRestaurants = data.restaurants || data.results || data.data || (Array.isArray(data) ? data : []);
     
     let insertedCount = 0;
     let skippedCount = 0;
 
-    // 3. Process records into your Supabase database table rows
     for (const item of targetRestaurants) {
       if (!item.name) continue; 
 
@@ -101,7 +95,9 @@ export async function GET(request: Request) {
       city: targetCity,
       total_found: targetRestaurants.length,
       newly_inserted: insertedCount,
-      duplicates_skipped: skippedCount
+      duplicates_skipped: skippedCount,
+      // Debug payload fallback flag to view structural mapping properties
+      debug_sample: targetRestaurants.slice(0, 1)
     });
 
   } catch (error: any) {
