@@ -94,6 +94,10 @@ export async function GET(request: Request) {
       const lng = Number.parseFloat(item.longitude);
       const ratingNum = Number.parseFloat(item.rating);
       const reviewNum = Number.parseInt(item.review_count, 10);
+      const halalScore = Number.parseInt(item.halal_rank_score ?? item.halal_score, 10);
+      const willReturn = Number.parseFloat(item.will_return_percentage ?? item.will_return);
+      const googleRating = Number.parseFloat(item.google_rating);
+      const googleReviews = Number.parseInt(item.google_review_count, 10);
 
       const addressParts = [item.address, item.city, item.state].filter(Boolean);
 
@@ -108,16 +112,30 @@ export async function GET(request: Request) {
             longitude: Number.isFinite(lng) ? lng : 0,
             cuisine_type: Array.isArray(item.cuisine) ? item.cuisine.join(', ') : (item.cuisine || "Halal"),
             // The table's CHECK constraints only allow a fixed set of values.
-            // Zabihah is community-sourced data, so it maps to COMMUNITY / Unverified / Other.
+            // Zabihah is community-sourced data, so it maps to COMMUNITY / Other with a
+            // dedicated 'zabihah' certification_status that flags the source.
             certification_body: "COMMUNITY",
-            certification_status: "Unverified",
+            certification_status: "zabihah",
             certification_type: "Other",
             rating: Number.isFinite(ratingNum) ? ratingNum : null,
             review_count: Number.isFinite(reviewNum) ? reviewNum : null,
             image_url: item.cover_image || null,
             last_scraped_date: today,
             source: "Zabihah.com Parse Import",
-            match_key: matchKey
+            match_key: matchKey,
+            // Zabihah's richer halal detail, preserved on their own columns.
+            price: item.price ?? null,
+            halal_status: item.halal_status ?? null,
+            halal_description: item.halal_description ?? null,
+            alcohol_policy: item.alcohol_policy ?? item.alcohol ?? null,
+            halal_rank_score: Number.isFinite(halalScore) ? halalScore : null,
+            halal_rank_tier: item.halal_rank_tier ?? item.halal_tier ?? null,
+            hand_slaughtered: typeof item.hand_slaughtered === 'boolean' ? item.hand_slaughtered : null,
+            is_trending: typeof item.is_trending === 'boolean' ? item.is_trending : null,
+            will_return_percentage: Number.isFinite(willReturn) ? willReturn : null,
+            google_rating: Number.isFinite(googleRating) ? googleRating : null,
+            google_review_count: Number.isFinite(googleReviews) ? googleReviews : null,
+            business_hours: item.business_hours ?? item.hours ?? null,
           },
           { onConflict: 'match_key' }
         );
