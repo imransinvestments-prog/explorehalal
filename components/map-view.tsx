@@ -1,8 +1,7 @@
 "use client"
 
-import { useEffect, useMemo } from "react"
+import { useEffect, useRef } from "react"
 import L from "leaflet"
-import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet"
 import "leaflet/dist/leaflet.css"
 import type { RestaurantWithDistance } from "@/lib/types"
 import type { Coordinates } from "@/lib/distance"
@@ -43,36 +42,36 @@ const CERT_COLORS: Record<string, string> = {
   BOTH: "oklch(0.5 0.13 155)",
 }
 
-function MapController({
-  origin,
-  restaurants,
-  activeId,
-}: {
-  origin: Coordinates | null
-  restaurants: RestaurantWithDistance[]
-  activeId: string | null
-}) {
-  const map = useMap()
+function popupHtml(r: RestaurantWithDistance) {
+  const ratingBlock =
+    typeof r.rating === "number" && r.rating > 0
+      ? `<br /><span style="display:inline-flex;align-items:center;gap:3px;">
+          <span style="color:#f5a524;" aria-hidden="true">★</span>
+          <strong>${r.rating.toFixed(1)}</strong>
+          ${
+            typeof r.review_count === "number" && r.review_count > 0
+              ? `<span style="opacity:.7;">(${r.review_count.toLocaleString(
+                  "en-GB",
+                )})</span>`
+              : ""
+          }
+        </span>`
+      : ""
 
-  useEffect(() => {
-    const active = restaurants.find((r) => r.id === activeId)
-    if (active) {
-      map.flyTo([active.latitude, active.longitude], 15, { duration: 0.6 })
-      return
-    }
-    const points: [number, number][] = restaurants.map((r) => [
-      r.latitude,
-      r.longitude,
-    ])
-    if (origin) points.push([origin.latitude, origin.longitude])
-    if (points.length === 1) {
-      map.setView(points[0], 14)
-    } else if (points.length > 1) {
-      map.fitBounds(L.latLngBounds(points), { padding: [48, 48] })
-    }
-  }, [map, origin, restaurants, activeId])
+  const distanceLine = Number.isFinite(r.distanceMiles)
+    ? `${r.distanceMiles.toFixed(1)} miles away`
+    : (r.postcode ?? "")
 
-  return null
+  const escape = (value: string) =>
+    value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+
+  return `<span class="font-semibold">${escape(r.name)}</span><br />
+    ${escape(r.cuisine_type ?? "")} · ${escape(r.certification_body ?? "")}
+    ${ratingBlock}
+    <br />${escape(distanceLine)}`
 }
 
 export default function MapView({
@@ -86,81 +85,119 @@ export default function MapView({
   activeId: string | null
   onSelect: (id: string) => void
 }) {
-  const center = useMemo<[number, number]>(() => {
-    if (origin) return [origin.latitude, origin.longitude]
-    if (restaurants[0])
-      return [restaurants[0].latitude, restaurants[0].longitude]
-    return [DEFAULT_COORDS.latitude, DEFAULT_COORDS.longitude]
-  }, [origin, restaurants])
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const mapRef = useRef<L.Map | null>(null)
+  const markersRef = useRef<L.Marker[]>([])
+  const originMarkerRef = useRef<L.Marker | null>(null)
+  // Keep the latest onSelect without re-running marker effects.
+  const onSelectRef = useRef(onSelect)
+  onSelectRef.current = onSelect
+
+  // Initialize the map exactly once, and tear it down fully on unmount.
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) return
+
+    const initialCenter: [number, number] = origin
+      ? [origin.latitude, origin.longitude]
+      : restaurants[0]
+        ? [restaurants[0].latitude, restaurants[0].longitude]
+        : [DEFAULT_COORDS.latitude, DEFAULT_COORDS.longitude]
+
+    const map = L.map(containerRef.current, {
+      center: initialCenter,
+      zoom: 13,
+      scrollWheelZoom: true,
+    })
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      className: "map-tiles-dark",
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    }).addTo(map)
+
+    mapRef.current = map
+
+    return () => {
+      map.remove()
+      mapRef.current = null
+      markersRef.current = []
+      originMarkerRef.current = null
+    }
+    // Intentionally run once; subsequent updates are handled by other effects.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Sync the origin marker.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    if (originMarkerRef.current) {
+      originMarkerRef.current.remove()
+      originMarkerRef.current = null
+    }
+
+    if (origin) {
+      originMarkerRef.current = L.marker([origin.latitude, origin.longitude], {
+        icon: originIcon(),
+      })
+        .bindPopup("Your search location")
+        .addTo(map)
+    }
+  }, [origin])
+
+  // Sync restaurant markers.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    for (const marker of markersRef.current) marker.remove()
+    markersRef.current = []
+
+    for (const r of restaurants) {
+      const marker = L.marker([r.latitude, r.longitude], {
+        icon: markerIcon(
+          CERT_COLORS[r.certification_body] ?? CERT_COLORS.HMC,
+          activeId === r.id,
+        ),
+      })
+        .bindPopup(popupHtml(r))
+        .addTo(map)
+
+      marker.on("click", () => onSelectRef.current(r.id))
+      markersRef.current.push(marker)
+    }
+  }, [restaurants, activeId])
+
+  // Fly to the active restaurant, or fit all points in view.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    const active = restaurants.find((r) => r.id === activeId)
+    if (active) {
+      map.flyTo([active.latitude, active.longitude], 15, { duration: 0.6 })
+      return
+    }
+
+    const points: [number, number][] = restaurants.map((r) => [
+      r.latitude,
+      r.longitude,
+    ])
+    if (origin) points.push([origin.latitude, origin.longitude])
+
+    if (points.length === 1) {
+      map.setView(points[0], 14)
+    } else if (points.length > 1) {
+      map.fitBounds(L.latLngBounds(points), { padding: [48, 48] })
+    }
+  }, [origin, restaurants, activeId])
 
   return (
-    <MapContainer
-      center={center}
-      zoom={13}
-      scrollWheelZoom
+    <div
+      ref={containerRef}
       className="h-full w-full"
       style={{ background: "var(--muted)" }}
-    >
-      <TileLayer
-        className="map-tiles-dark"
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
-
-      {origin && (
-        <Marker
-          position={[origin.latitude, origin.longitude]}
-          icon={originIcon()}
-        >
-          <Popup>Your search location</Popup>
-        </Marker>
-      )}
-
-      {restaurants.map((r) => (
-        <Marker
-          key={r.id}
-          position={[r.latitude, r.longitude]}
-          icon={markerIcon(
-            CERT_COLORS[r.certification_body] ?? CERT_COLORS.HMC,
-            activeId === r.id,
-          )}
-          eventHandlers={{ click: () => onSelect(r.id) }}
-        >
-          <Popup>
-            <span className="font-semibold">{r.name}</span>
-            <br />
-            {r.cuisine_type} · {r.certification_body}
-            {typeof r.rating === "number" && r.rating > 0 && (
-              <>
-                <br />
-                <span
-                  style={{ display: "inline-flex", alignItems: "center", gap: 3 }}
-                >
-                  <span style={{ color: "#f5a524" }} aria-hidden="true">
-                    ★
-                  </span>
-                  <strong>{r.rating.toFixed(1)}</strong>
-                  {typeof r.review_count === "number" && r.review_count > 0 && (
-                    <span style={{ opacity: 0.7 }}>
-                      {`(${r.review_count.toLocaleString("en-GB")})`}
-                    </span>
-                  )}
-                </span>
-              </>
-            )}
-            <br />
-            {Number.isFinite(r.distanceMiles)
-              ? `${r.distanceMiles.toFixed(1)} miles away`
-              : r.postcode}
-          </Popup>
-        </Marker>
-      ))}
-
-      <MapController
-        origin={origin}
-        restaurants={restaurants}
-        activeId={activeId}
-      />
-    </MapContainer>
+    />
   )
 }
