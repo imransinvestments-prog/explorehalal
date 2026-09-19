@@ -25,7 +25,7 @@ export async function GET(request: Request) {
   try {
     const targetUrl = "https://parse.bot";
     
-    // ✅ Validated Payload: Arguments are passed directly in the body root matching Parse specifications
+    // ✅ Multi-mapping configuration payload block to prevent empty schema returns
     const response = await fetch(targetUrl, {
       method: 'POST',
       headers: { 
@@ -34,14 +34,15 @@ export async function GET(request: Request) {
         'Accept': 'application/json'
       },
       body: JSON.stringify({
-        location: targetCity,
-        limit: 20 // Stay safe within your available credit limits
+        location: targetCity,  // Traditional mapping parameter
+        city: targetCity,      // Alternating schema parameter fallback
+        query: targetCity,     // Generic search fallback parameter
+        limit: 20 
       })
     });
 
     const rawText = await response.text();
 
-    // Soft fallback safety check to prevent JSON parsing crashes on empty results
     let data;
     if (!rawText || rawText.trim() === "") {
       data = { restaurants: [] };
@@ -54,7 +55,7 @@ export async function GET(request: Request) {
       data = JSON.parse(rawText);
     }
     
-    // Fallback options to unpack your data array safely
+    // Check all possible response array paths commonly used by Parse
     const targetRestaurants = data.restaurants || data.results || data.data || (Array.isArray(data) ? data : []);
     
     let insertedCount = 0;
@@ -93,7 +94,7 @@ export async function GET(request: Request) {
       total_found: targetRestaurants.length,
       newly_inserted: insertedCount,
       duplicates_skipped: skippedCount,
-      debug_payload_received: data // Displays the raw data payload directly if successful
+      debug_raw_api_response: data // Lets us see exactly how the array fields are packaged
     });
 
   } catch (error: any) {
