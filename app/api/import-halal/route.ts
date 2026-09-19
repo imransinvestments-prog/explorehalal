@@ -23,13 +23,14 @@ export async function GET(request: Request) {
   const supabase = createClient(supabaseUrl, supabaseRole);
 
   try {
-    // ✅ 1. Reverted to standard Parse.bot GET endpoint path format
+    // ✅ 1. Point directly to the core base scraper URL root structure to bypass 404 blocks
     const baseUrl = "https://parse.bot";
     const targetUrl = new URL(baseUrl);
     
-    // ✅ 2. Append parameters directly as standard URL query strings
+    // ✅ 2. Pass your custom endpoint name and query variables directly as URL search parameters
+    targetUrl.searchParams.append("endpoint", "search_restaurants");
     targetUrl.searchParams.append("location", targetCity);
-    targetUrl.searchParams.append("limit", "20"); // Safely stay well within credit limits
+    targetUrl.searchParams.append("limit", "20"); 
     
     const response = await fetch(targetUrl.toString(), {
       method: 'GET',
@@ -44,7 +45,7 @@ export async function GET(request: Request) {
     if (!rawText || rawText.trim() === "") {
       return NextResponse.json({ 
         error: "Parse API returned a completely blank response string.",
-        hint: "Check your query arguments or test the endpoint inside the Parse.bot panel directly to verify data availability."
+        hint: "Double check your Parse project parameters setup configuration fields."
       }, { status: 500 });
     }
 
@@ -57,7 +58,7 @@ export async function GET(request: Request) {
 
     const data = JSON.parse(rawText);
     
-    // ✅ 3. Flexible extraction strategy to target arrays returned by Parse
+    // 3. Flexible extraction strategy to target arrays returned by Parse
     const targetRestaurants = data.restaurants || data.results || data.data || (Array.isArray(data) ? data : []);
     
     let insertedCount = 0;
@@ -96,7 +97,6 @@ export async function GET(request: Request) {
       total_found: targetRestaurants.length,
       newly_inserted: insertedCount,
       duplicates_skipped: skippedCount,
-      // Debug payload fallback flag to view structural mapping properties
       debug_sample: targetRestaurants.slice(0, 1)
     });
 
