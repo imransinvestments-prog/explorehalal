@@ -5,6 +5,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const targetCity = searchParams.get('city');
 
+  // 1. Verify input city is present
   if (!targetCity) {
     return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=London' }, { status: 400 });
   }
@@ -13,20 +14,21 @@ export async function GET(request: Request) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+  // 2. Safeguard checking for configuration keys on Vercel
   if (!apiKey || !supabaseUrl || !supabaseRole) {
     return NextResponse.json({ 
       error: 'Required environment variables are completely missing inside Vercel.',
-      status: { hasApiKey: !!apiKey, hasSubabaseUrl: !!supabaseUrl, hasSupabaseRole: !!supabaseRole }
+      status: { hasApiKey: !!apiKey, hasSupabaseUrl: !!supabaseUrl, hasSupabaseRole: !!supabaseRole }
     }, { status: 500 });
   }
 
   const supabase = createClient(supabaseUrl, supabaseRole);
 
   try {
-    // ✅ 1. Point to the base scraper URL layout without breaking the path routing configuration
+    // ✅ The exact endpoint URL from your Parse dashboard
     const targetUrl = "https://parse.bot";
     
-    // ✅ 2. Fire the connection using POST to map parameters into the core execution pipeline
+    // ✅ Fire the request using a POST method structure as required by the marketplace tool
     const response = await fetch(targetUrl, {
       method: 'POST',
       headers: { 
@@ -34,25 +36,23 @@ export async function GET(request: Request) {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
-      // Pass both your target action name and parameters inside the payload block
       body: JSON.stringify({
-        action: "search_restaurants", 
-        parameters: {
-          location: targetCity,
-          limit: 100
-        }
+        location: targetCity,
+        limit: 100
       })
     });
 
     const rawText = await response.text();
 
+    // Catch if Parse.bot is dropping requests or returning completely empty string payloads
     if (!rawText || rawText.trim() === "") {
       return NextResponse.json({ 
         error: "Parse API returned a completely blank response string.",
-        hint: "Please ensure your PARSE_API_KEY does not contain accidental trailing spaces in your Vercel project environment variables panel."
+        hint: "Double check your Parse dashboard panel to ensure your account has active data query credits remaining."
       }, { status: 500 });
     }
 
+    // Catch if Parse.bot routes to an error HTML layout page instead of data rows
     if (rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
       return NextResponse.json({
         error: "The scraper pipeline returned a webpage layout instead of structured JSON data.",
@@ -62,12 +62,13 @@ export async function GET(request: Request) {
 
     const data = JSON.parse(rawText);
     
-    // Safely look through alternative formatting arrays returned by Parse's backend
+    // Fallback options to unpack data array depending on the exact object structure Parse maps back
     const targetRestaurants = data.restaurants || data.results || data.data || (Array.isArray(data) ? data : []);
     
     let insertedCount = 0;
     let skippedCount = 0;
 
+    // 3. Process records into your Supabase database table rows
     for (const item of targetRestaurants) {
       if (!item.name) continue; 
 
