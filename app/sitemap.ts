@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next"
+import { getSiteUrl } from "@/lib/site-url"
 
-const siteUrl =
-  process.env.NEXT_PUBLIC_SITE_URL ?? "https://explorehalal.vercel.app"
+const siteUrl = getSiteUrl()
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date()
