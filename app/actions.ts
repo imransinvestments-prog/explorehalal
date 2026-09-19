@@ -618,17 +618,40 @@ export async function deleteDuplicates(ids: string[]): Promise<DedupeResult> {
 
   const supabase = createAdminClient()
 
-  // Delete in batches to keep each request well within PostgREST limits.
+  // Process in batches to keep each request well within PostgREST limits.
   const BATCH = 200
   let deleted = 0
   for (let i = 0; i < clean.length; i += BATCH) {
     const batch = clean.slice(i, i + BATCH)
+
+    // 1. Read the full rows so we can copy them into the archive verbatim.
+    const { data: rows, error: readError } = await supabase
+      .from("restaurants")
+      .select("*")
+      .in("id", batch)
+    if (readError) return { deleted, error: readError.message }
+    if (!rows || rows.length === 0) continue
+
+    // 2. Archive them into deleted_restaurants before removing. The archive
+    // table has its own archive_id/deleted_at defaults, so we insert the
+    // original columns as-is plus a reason.
+    const archiveRows = rows.map((row) => ({
+      ...row,
+      deleted_reason: "Removed by admin de-dupe tool",
+    }))
+    const { error: archiveError } = await supabase
+      .from("deleted_restaurants")
+      .insert(archiveRows)
+    if (archiveError) return { deleted, error: `Archive failed: ${archiveError.message}` }
+
+    // 3. Only delete rows we successfully archived.
+    const archivedIds = rows.map((row) => row.id)
     const { error, count } = await supabase
       .from("restaurants")
       .delete({ count: "exact" })
-      .in("id", batch)
+      .in("id", archivedIds)
     if (error) return { deleted, error: error.message }
-    deleted += count ?? batch.length
+    deleted += count ?? archivedIds.length
   }
 
   revalidatePath("/")
