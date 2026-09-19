@@ -39,7 +39,7 @@ const MapView = dynamic(() => import("./map-view"), {
 
 const INITIAL_FILTERS: Filters = {
   postcode: "",
-  distance: 1,
+    distance: 5,
   cuisine: "all",
 }
 

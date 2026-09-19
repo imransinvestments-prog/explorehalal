@@ -67,4 +67,4 @@ export const CUISINE_TYPES = [
   "Malaysian",
 ] as const
 
-export const DISTANCE_OPTIONS = [1, 3, 5, 10] as const
+export const DISTANCE_OPTIONS = [1, 3, 5, 10, 25, 50, 100] as const
