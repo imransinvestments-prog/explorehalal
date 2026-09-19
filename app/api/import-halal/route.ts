@@ -11,7 +11,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=Manchester' }, { status: 400 });
   }
 
-  // ✅ Reads securely from Vercel's Dashboard Environment Variables system
   const apiKey = process.env.PARSE_API_KEY;
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -57,16 +56,14 @@ export async function GET(request: Request) {
 
     const data = JSON.parse(rawText);
     
+    // ✅ Match the deep nesting structure visible on your screen
     let targetRestaurants: any[] = [];
     if (data && data.data && Array.isArray(data.data.restaurants)) {
       targetRestaurants = data.data.restaurants;
-    } else if (Array.isArray(data.restaurants)) {
+    } else if (data && Array.isArray(data.restaurants)) {
       targetRestaurants = data.restaurants;
     } else if (Array.isArray(data)) {
       targetRestaurants = data;
-    } else if (data && typeof data === 'object') {
-      const fallback = data.results || data.data || data.items;
-      targetRestaurants = Array.isArray(fallback) ? fallback : [data];
     }
 
     let insertedCount = 0;
@@ -119,8 +116,7 @@ export async function GET(request: Request) {
       total_found: targetRestaurants.length,
       newly_inserted: insertedCount,
       duplicates_or_errors_skipped: skippedCount,
-      supabase_diagnostic_logs: databaseErrors, 
-      debug_raw_api_response: data
+      supabase_diagnostic_logs: databaseErrors
     });
 
   } catch (error: any) {
