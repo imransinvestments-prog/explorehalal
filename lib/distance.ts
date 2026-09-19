@@ -84,11 +84,12 @@ async function geocodeNominatim(query: string): Promise<Coordinates | null> {
     const url = new URL("https://nominatim.openstreetmap.org/search")
     url.searchParams.set("q", query)
     url.searchParams.set("format", "json")
-    url.searchParams.set("countrycodes", "gb")
+    // No country restriction: allow international places (e.g. Berlin) to
+    // resolve, not just UK locations.
     url.searchParams.set("limit", "1")
 
     const res = await fetch(url.toString(), {
-      headers: { "Accept-Language": "en-GB" },
+      headers: { "Accept-Language": "en" },
     })
     if (!res.ok) return null
 
