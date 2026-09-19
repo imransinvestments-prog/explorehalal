@@ -3,66 +3,29 @@ import type { Restaurant } from "./types"
 /**
  * Duplicate detection for the restaurants table.
  *
- * Two rows are treated as the same venue when they share the SAME postcode and
- * their names contain TWO OR MORE of the same significant words. "Significant"
- * excludes generic filler (connectors like "the"/"and" and catch-all terms
- * like "restaurant"/"takeaway") so a single shared generic word can't merge two
- * genuinely different venues.
+ * Two rows are treated as the same venue when they share the SAME address.
+ * Addresses are normalised (lowercased, punctuation stripped, whitespace
+ * collapsed) before comparison so trivial formatting differences ("12 High St."
+ * vs "12 High Street") that are otherwise identical still group together only
+ * when they truly match. Rows with a blank address are never grouped.
  */
-
-/** Minimum number of shared significant name words for two rows to be duplicates. */
-export const SHARED_WORD_THRESHOLD = 2
 
 /**
- * Generic words that shouldn't count towards the shared-word match. These are
- * connectors and catch-all venue terms that appear across many unrelated
- * venues, so matching on them alone would cause false merges.
+ * Normalise an address for grouping: lowercase, strip punctuation, collapse
+ * runs of whitespace and trim. Returns an empty string when there is nothing
+ * meaningful to compare (such rows are excluded from duplicate detection).
  */
-const STOP_WORDS = new Set([
-  "the",
-  "and",
-  "of",
-  "a",
-  "an",
-  "at",
-  "in",
-  "on",
-  "to",
-  "for",
-  "ltd",
-  "limited",
-  "restaurant",
-  "restaurants",
-  "takeaway",
-  "takeaways",
-])
-
-/** Normalise a postcode for grouping: uppercase, no internal spaces. */
-export function normalizePostcode(postcode: string): string {
-  return (postcode ?? "").toUpperCase().replace(/\s+/g, "")
-}
-
-/**
- * Break a name into its set of significant lowercase words. Punctuation and
- * ampersands become separators, stop words are dropped, and single characters
- * are ignored (e.g. "M" in "Mangal M 2").
- */
-export function significantWords(name: string): Set<string> {
-  const words = (name ?? "")
+export function normalizeAddress(address: string | null | undefined): string {
+  return (address ?? "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
-    .split(" ")
-    .filter((w) => w.length >= 2 && !STOP_WORDS.has(w))
-  return new Set(words)
+    .replace(/\s+/g, " ")
+    .trim()
 }
 
-/** Count how many significant words two names share. */
-export function sharedWordCount(a: Set<string>, b: Set<string>): number {
-  let count = 0
-  for (const word of a) {
-    if (b.has(word)) count++
-  }
-  return count
+/** Normalise a postcode for display/secondary comparison: uppercase, no spaces. */
+export function normalizePostcode(postcode: string): string {
+  return (postcode ?? "").toUpperCase().replace(/\s+/g, "")
 }
 
 /**
@@ -115,66 +78,30 @@ export interface DuplicateCluster {
 }
 
 /**
- * Group restaurants into duplicate clusters. Rows are first bucketed by
- * normalised postcode; within each bucket a union-find joins any two rows whose
- * names share at least SHARED_WORD_THRESHOLD significant words (transitively, so
- * A~B and B~C place A, B and C in one cluster). Only clusters with more than one
- * row are returned.
+ * Group restaurants into duplicate clusters by normalised address. Every set of
+ * two or more rows that share the same normalised address becomes one cluster;
+ * within it the most complete/trusted row is kept and the rest are flagged for
+ * removal. Rows with a blank address are ignored.
  */
 export function findDuplicateClusters(restaurants: Restaurant[]): DuplicateCluster[] {
-  const byPostcode = new Map<string, Restaurant[]>()
+  const byAddress = new Map<string, Restaurant[]>()
   for (const r of restaurants) {
-    const key = normalizePostcode(r.postcode)
+    const key = normalizeAddress(r.address)
     if (!key) continue
-    const bucket = byPostcode.get(key)
+    const bucket = byAddress.get(key)
     if (bucket) bucket.push(r)
-    else byPostcode.set(key, [r])
+    else byAddress.set(key, [r])
   }
 
   const clusters: DuplicateCluster[] = []
 
-  for (const bucket of byPostcode.values()) {
-    if (bucket.length < 2) continue
-
-    const words = bucket.map((r) => significantWords(r.name))
-    const parent = bucket.map((_, i) => i)
-    const find = (i: number): number => {
-      while (parent[i] !== i) {
-        parent[i] = parent[parent[i]]
-        i = parent[i]
-      }
-      return i
-    }
-    const union = (i: number, j: number) => {
-      const ri = find(i)
-      const rj = find(j)
-      if (ri !== rj) parent[ri] = rj
-    }
-
-    for (let i = 0; i < bucket.length; i++) {
-      for (let j = i + 1; j < bucket.length; j++) {
-        if (sharedWordCount(words[i], words[j]) >= SHARED_WORD_THRESHOLD) {
-          union(i, j)
-        }
-      }
-    }
-
-    const groups = new Map<number, Restaurant[]>()
-    for (let i = 0; i < bucket.length; i++) {
-      const root = find(i)
-      const group = groups.get(root)
-      if (group) group.push(bucket[i])
-      else groups.set(root, [bucket[i]])
-    }
-
-    for (const group of groups.values()) {
-      if (group.length < 2) continue
-      const keep = pickCanonical(group)
-      clusters.push({
-        keep,
-        remove: group.filter((r) => r.id !== keep.id),
-      })
-    }
+  for (const group of byAddress.values()) {
+    if (group.length < 2) continue
+    const keep = pickCanonical(group)
+    clusters.push({
+      keep,
+      remove: group.filter((r) => r.id !== keep.id),
+    })
   }
 
   return clusters
