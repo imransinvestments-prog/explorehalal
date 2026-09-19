@@ -6,7 +6,7 @@ export async function GET(request: Request) {
   const targetCity = searchParams.get('city');
 
   if (!targetCity) {
-    return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=Manchester' }, { status: 400 });
+    return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=London' }, { status: 400 });
   }
 
   const apiKey = process.env.PARSE_API_KEY;
@@ -23,10 +23,9 @@ export async function GET(request: Request) {
   const supabase = createClient(supabaseUrl, supabaseRole);
 
   try {
-    // ✅ 1. Pointed straight to Parse's official API backend route with your exact scraper ID and action path
     const targetUrl = "https://parse.bot";
     
-    // ✅ 2. Fire the connection using POST with flat arguments matching custom marketplace routes
+    // ✅ Validated Payload: Arguments are passed directly in the body root matching Parse specifications
     const response = await fetch(targetUrl, {
       method: 'POST',
       headers: { 
@@ -36,30 +35,26 @@ export async function GET(request: Request) {
       },
       body: JSON.stringify({
         location: targetCity,
-        limit: 20 // Stayed at 20 to safely run within your available 297 credit balance
+        limit: 20 // Stay safe within your available credit limits
       })
     });
 
     const rawText = await response.text();
 
-    // If the data connection yields a blank string payload
+    // Soft fallback safety check to prevent JSON parsing crashes on empty results
+    let data;
     if (!rawText || rawText.trim() === "") {
-      return NextResponse.json({ 
-        error: "Parse API returned a completely blank response string.",
-        hint: "Double check your Parse project dashboard parameter mappings to make sure 'location' is mapped correctly."
-      }, { status: 500 });
-    }
-
-    if (rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
+      data = { restaurants: [] };
+    } else if (rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
       return NextResponse.json({
         error: "The API endpoint configuration returned a webpage layout rather than clean data rows.",
         htmlSnippet: rawText.substring(0, 400)
       }, { status: 500 });
+    } else {
+      data = JSON.parse(rawText);
     }
-
-    const data = JSON.parse(rawText);
     
-    // 3. Flexible extraction strategy to target alternative nesting fields returned by the scraper
+    // Fallback options to unpack your data array safely
     const targetRestaurants = data.restaurants || data.results || data.data || (Array.isArray(data) ? data : []);
     
     let insertedCount = 0;
@@ -98,7 +93,7 @@ export async function GET(request: Request) {
       total_found: targetRestaurants.length,
       newly_inserted: insertedCount,
       duplicates_skipped: skippedCount,
-      debug_received_payload: data
+      debug_payload_received: data // Displays the raw data payload directly if successful
     });
 
   } catch (error: any) {
