@@ -1,47 +1,33 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const targetCity = searchParams.get('city');
-
-  if (!targetCity) {
-    return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=London' }, { status: 400 });
-  }
-
-  if (!process.env.PARSE_API_KEY || !process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    return NextResponse.json({ error: 'Required environment variables are missing' }, { status: 500 });
-  }
-
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-  );
-
   try {
-    // ✅ 1. Correct base API subdomain & specific endpoint action route
+    // 1. Target URL
     const baseUrl = "https://parse.bot";
     const targetUrl = new URL(baseUrl);
     
-    // ✅ 2. Safely append parameters for the Parse query
     targetUrl.searchParams.append("limit", "100");
     targetUrl.searchParams.append("location", targetCity);
     
-    // ✅ 3. Fire request to the correct live cloud endpoint
+    // 2. Fetching raw response text first to handle HTML safeguards safely
     const response = await fetch(targetUrl.toString(), {
+      method: 'GET', // Change to 'POST' if the debug output says "Method Not Allowed"
       headers: { 
-        'X-API-Key': process.env.PARSE_API_KEY,
+        'X-API-Key': process.env.PARSE_API_KEY || '',
+        'Accept': 'application/json',
         'Content-Type': 'application/json'
       }
     });
 
-    if (!response.ok) {
-      throw new Error(`Zabihah stream failed: ${response.status} ${response.statusText}`);
+    const rawText = await response.text();
+
+    // Catch if the response is an HTML page or error block instead of JSON
+    if (rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
+      return NextResponse.json({ 
+        error: "Parse API returned an HTML page instead of JSON. Check the snippet below for the reason:",
+        htmlSnippet: rawText.substring(0, 500) // Shows the first 500 characters of the error page
+      }, { status: 500 });
     }
-    
-    const data = await response.json();
-    
-    // Note: If Parse returns an un-wrapped array directly, change this fallback to: data || [];
+
+    // Safely parse JSON if it's confirmed clean text
+    const data = JSON.parse(rawText);
     const targetRestaurants = data.restaurants || data.results || data || [];
     
     let insertedCount = 0;
@@ -75,7 +61,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       success: true,
       city: targetCity,
-      total_found_on_zabihah: targetRestaurants.length,
+      total_found: targetRestaurants.length,
       newly_inserted: insertedCount,
       duplicates_skipped: skippedCount
     });
@@ -83,4 +69,3 @@ export async function GET(request: Request) {
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
