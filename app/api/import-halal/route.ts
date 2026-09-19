@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   const targetCity = searchParams.get('city');
 
   if (!targetCity) {
-    return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=Manchester' }, { status: 400 });
+    return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=Chicago' }, { status: 400 });
   }
 
   const apiKey = process.env.PARSE_API_KEY;
@@ -25,32 +25,31 @@ export async function GET(request: Request) {
   const supabase = createClient(supabaseUrl, supabaseRole);
 
   try {
-    // ✅ 1. Standardized Canonical global Parse execution gateway URL route
-    const targetUrl = "https://parse.bot";
+    // ✅ 1. Updated with your exact new working scraper ID
+    const baseUrl = "https://api.parse.bot/scraper/7d525839-78db-4e5b-a6cb-7838a2d1a23e/search_restaurants";
+    const targetUrl = new URL(baseUrl);
     
-    // ✅ 2. Fire the connection request with variables matching your validated workspace layout
-    const response = await fetch(targetUrl, {
-      method: 'POST',
+    targetUrl.searchParams.append("location", targetCity.trim());
+    targetUrl.searchParams.append("limit", "20"); 
+
+    // ✅ 2. Integrated the mandatory API-Snapshot-Version header from your curl
+    const response = await fetch(targetUrl.toString(), {
+      method: 'GET',
       headers: { 
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
+        'X-API-Key': apiKey,
+        'API-Snapshot-Version': '3',
         'Accept': 'application/json'
       },
-      cache: 'no-store',
-      body: JSON.stringify({
-        scraper_id: "5f5c1663-acb9-42c4-a4ad-386c0f7013aa",
-        action: "search_restaurants",
-        variables: {
-          location: targetCity.trim(),
-          limit: 20
-        }
-      })
+      cache: 'no-store' 
     });
 
     const rawText = await response.text();
 
     if (!rawText || rawText.trim() === "") {
-      return NextResponse.json({ error: "Parse API returned an empty response string." }, { status: 500 });
+      return NextResponse.json({ 
+        error: "Parse API returned an empty response string.",
+        hint: "Double check your PARSE_API_KEY in Vercel to ensure it matches perfectly."
+      }, { status: 500 });
     }
 
     if (rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
@@ -62,7 +61,7 @@ export async function GET(request: Request) {
 
     const data = JSON.parse(rawText);
     
-    // Flexible Array Locator: Safely extracts the valid array regardless of Parse's field naming choice
+    // Safe Array Extraction layer
     let targetRestaurants: any[] = [];
     if (Array.isArray(data)) {
       targetRestaurants = data;
@@ -74,6 +73,8 @@ export async function GET(request: Request) {
         const foundArray = Object.values(data).find(val => Array.isArray(val));
         if (Array.isArray(foundArray)) {
           targetRestaurants = foundArray;
+        } else {
+          targetRestaurants = [data];
         }
       }
     }
@@ -114,7 +115,7 @@ export async function GET(request: Request) {
       total_found: targetRestaurants.length,
       newly_inserted: insertedCount,
       duplicates_skipped: skippedCount,
-      raw_api_response_shape: data 
+      debug_raw_payload: data 
     });
 
   } catch (error: any) {
