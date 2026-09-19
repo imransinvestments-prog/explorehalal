@@ -61,26 +61,27 @@ export async function GET(request: Request) {
 
     const data = JSON.parse(rawText);
     
-    // Safe Array Extraction layer
-    let targetRestaurants: any[] = [];
-    if (Array.isArray(data)) {
-      targetRestaurants = data;
-    } else if (data && typeof data === 'object') {
-      const plausibleArray = data.restaurants || data.results || data.data || data.items;
-      if (Array.isArray(plausibleArray)) {
-        targetRestaurants = plausibleArray;
-      } else {
-        const foundArray = Object.values(data).find(val => Array.isArray(val));
-        if (Array.isArray(foundArray)) {
-          targetRestaurants = foundArray;
-        } else {
-          targetRestaurants = [data];
-        }
+    // Safe Array Extraction layer.
+    // The Parse API nests the payload as { status, data: { restaurants: [...] } },
+    // so we recursively search the object tree for the first array of records.
+    const findRecordArray = (node: any, depth = 0): any[] | null => {
+      if (Array.isArray(node)) return node;
+      if (!node || typeof node !== 'object' || depth > 4) return null;
+      const preferred = node.restaurants || node.results || node.items;
+      if (Array.isArray(preferred)) return preferred;
+      for (const value of Object.values(node)) {
+        const found = findRecordArray(value, depth + 1);
+        if (found) return found;
       }
-    }
+      return null;
+    };
+
+    const targetRestaurants: any[] = findRecordArray(data) ?? [];
 
     let insertedCount = 0;
     let skippedCount = 0;
+    const errors: string[] = [];
+    const today = new Date().toISOString().split('T')[0];
 
     for (const item of targetRestaurants) {
       if (!item || typeof item !== 'object' || !item.name) continue; 
@@ -89,24 +90,44 @@ export async function GET(request: Request) {
       const cleanAddr = (item.address || '').toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
       const matchKey = `${cleanName}_${cleanAddr}`;
 
+      const lat = Number.parseFloat(item.latitude);
+      const lng = Number.parseFloat(item.longitude);
+      const ratingNum = Number.parseFloat(item.rating);
+      const reviewNum = Number.parseInt(item.review_count, 10);
+
+      const addressParts = [item.address, item.city, item.state].filter(Boolean);
+
       const { error } = await supabase
         .from('restaurants')
         .upsert(
           {
             name: item.name,
-            address: item.address || "Address Not Listed",
-            postcode: "See Address",
+            address: addressParts.length ? addressParts.join(', ') : "Address Not Listed",
+            postcode: item.state || "N/A",
+            latitude: Number.isFinite(lat) ? lat : 0,
+            longitude: Number.isFinite(lng) ? lng : 0,
             cuisine_type: Array.isArray(item.cuisine) ? item.cuisine.join(', ') : (item.cuisine || "Halal"),
-            certification_body: item.halal_description || "Zabihah Community Verified",
-            certification_status: item.halal_rank_tier || "Verified",
+            // The table's CHECK constraints only allow a fixed set of values.
+            // Zabihah is community-sourced data, so it maps to COMMUNITY / Unverified / Other.
+            certification_body: "COMMUNITY",
+            certification_status: "Unverified",
+            certification_type: "Other",
+            rating: Number.isFinite(ratingNum) ? ratingNum : null,
+            review_count: Number.isFinite(reviewNum) ? reviewNum : null,
+            image_url: item.cover_image || null,
+            last_scraped_date: today,
             source: "Zabihah.com Parse Import",
             match_key: matchKey
           },
           { onConflict: 'match_key' }
         );
 
-      if (!error) insertedCount++;
-      else skippedCount++;
+      if (!error) {
+        insertedCount++;
+      } else {
+        skippedCount++;
+        if (errors.length < 5) errors.push(`${item.name}: ${error.message}`);
+      }
     }
 
     return NextResponse.json({
@@ -115,7 +136,7 @@ export async function GET(request: Request) {
       total_found: targetRestaurants.length,
       newly_inserted: insertedCount,
       duplicates_skipped: skippedCount,
-      debug_raw_payload: data 
+      sample_errors: errors,
     });
 
   } catch (error: any) {
