@@ -9,7 +9,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=London' }, { status: 400 });
   }
 
-  // Fallback checks to help you diagnose environment synchronization gaps
   const apiKey = process.env.PARSE_API_KEY;
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -24,42 +23,46 @@ export async function GET(request: Request) {
   const supabase = createClient(supabaseUrl, supabaseRole);
 
   try {
-    // ✅ Reverted back to the official GET layout matching standard endpoint structures
-    const baseUrl = "https://parse.bot";
-    const targetUrl = new URL(baseUrl);
+    // ✅ 1. Point to the base scraper URL layout without breaking the path routing configuration
+    const targetUrl = "https://parse.bot";
     
-    // Pass queries via URL string params directly
-    targetUrl.searchParams.append("location", targetCity);
-    targetUrl.searchParams.append("limit", "100");
-    
-    const response = await fetch(targetUrl.toString(), {
-      method: 'GET',
+    // ✅ 2. Fire the connection using POST to map parameters into the core execution pipeline
+    const response = await fetch(targetUrl, {
+      method: 'POST',
       headers: { 
         'X-API-Key': apiKey,
+        'Content-Type': 'application/json',
         'Accept': 'application/json'
-      }
+      },
+      // Pass both your target action name and parameters inside the payload block
+      body: JSON.stringify({
+        action: "search_restaurants", 
+        parameters: {
+          location: targetCity,
+          limit: 100
+        }
+      })
     });
 
     const rawText = await response.text();
 
-    // Catch if the data pipeline yields completely blank records
     if (!rawText || rawText.trim() === "") {
       return NextResponse.json({ 
-        error: "Parse API returned a completely empty response string.",
-        solutionHint: "1. Go to Vercel Settings -> Environment Variables and verify PARSE_API_KEY matches your token perfectly. 2. Open Parse.bot dashboard and click 'Send request' inside the search_restaurants tab manually to verify it has data."
+        error: "Parse API returned a completely blank response string.",
+        hint: "Please ensure your PARSE_API_KEY does not contain accidental trailing spaces in your Vercel project environment variables panel."
       }, { status: 500 });
     }
 
     if (rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
       return NextResponse.json({
-        error: "The API endpoint returned a webpage instead of raw json data.",
+        error: "The scraper pipeline returned a webpage layout instead of structured JSON data.",
         htmlSnippet: rawText.substring(0, 400)
       }, { status: 500 });
     }
 
     const data = JSON.parse(rawText);
     
-    // Dynamically target nested properties or check for a base list array wrapper
+    // Safely look through alternative formatting arrays returned by Parse's backend
     const targetRestaurants = data.restaurants || data.results || data.data || (Array.isArray(data) ? data : []);
     
     let insertedCount = 0;
@@ -97,8 +100,7 @@ export async function GET(request: Request) {
       city: targetCity,
       total_found: targetRestaurants.length,
       newly_inserted: insertedCount,
-      duplicates_skipped: skippedCount,
-      raw_debug_sample: targetRestaurants.slice(0, 1) // Returns the first item to verify layout matches your columns
+      duplicates_skipped: skippedCount
     });
 
   } catch (error: any) {
