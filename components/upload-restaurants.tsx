@@ -159,6 +159,8 @@ function parseGeoJSON(text: string): UploadRow[] {
       row.latitude = coords.lat
       row.longitude = coords.lng
     }
+    // Default the provenance to "geojson" unless the feature names its own source.
+    if (!row.source) row.source = "geojson"
     // Keep any feature that has at least a name or a postcode to work with.
     if (row.name || row.postcode) out.push(row)
   }

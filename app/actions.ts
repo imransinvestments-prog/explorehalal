@@ -104,21 +104,21 @@ export interface UploadSummary {
   results: UploadRowResult[]
 }
 
-const VALID_BODIES = new Set(["HMC", "HFA", "BOTH"])
-const VALID_STATUSES = new Set(["Certified", "Pending", "Expired", "Suspended"])
+const VALID_BODIES = new Set(["HMC", "HFA", "BOTH", "COMMUNITY"])
+const VALID_STATUSES = new Set(["Certified", "Pending", "Expired", "Suspended", "Unverified"])
 
 function normalizeBody(raw?: string): string | null {
-  if (!raw) return "HMC"
+  if (!raw) return "COMMUNITY"
   const v = raw.trim().toUpperCase()
   if (v === "HMC & HFA" || v === "HMC/HFA" || v === "HMC AND HFA") return "BOTH"
   return VALID_BODIES.has(v) ? v : null
 }
 
 function normalizeStatus(raw?: string): string {
-  if (!raw) return "Certified"
+  if (!raw) return "Unverified"
   const v = raw.trim().toLowerCase()
   const match = [...VALID_STATUSES].find((s) => s.toLowerCase() === v)
-  return match ?? "Certified"
+  return match ?? "Unverified"
 }
 
 // Matches a UK postcode anywhere in a string (with or without the internal
@@ -252,7 +252,7 @@ export async function uploadRestaurants(rows: UploadRow[]): Promise<UploadSummar
         name,
         postcode,
         status: "skipped",
-        reason: `Invalid certification body "${raw.certification_body}" (expected HMC, HFA or BOTH)`,
+        reason: `Invalid certification body "${raw.certification_body}" (expected HMC, HFA, BOTH or COMMUNITY)`,
       })
       continue
     }
