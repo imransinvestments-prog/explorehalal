@@ -107,6 +107,9 @@ export default function MapView({
   // Keep the latest onSelect without re-running marker effects.
   const onSelectRef = useRef(onSelect)
   onSelectRef.current = onSelect
+  // Latest camera-positioning function + whether the map has ever been visible.
+  const applyCameraRef = useRef<(() => void) | null>(null)
+  const wasVisibleRef = useRef(false)
 
   // Initialize the map exactly once, and tear it down fully on unmount.
   useEffect(() => {
@@ -144,8 +147,21 @@ export default function MapView({
     // The map may mount inside a hidden (display:none) container on mobile,
     // where Leaflet measures a zero-size viewport and never loads tiles. Watch
     // for the container becoming visible / resizing and recompute the size.
-    const resizeObserver = new ResizeObserver(() => {
-      map.invalidateSize()
+    const resizeObserver = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect
+      const visible = width > 0 && height > 0
+      if (!visible) {
+        wasVisibleRef.current = false
+        return
+      }
+      map.invalidateSize({ animate: false })
+      // The first time the map becomes visible, its camera was computed against
+      // a zero-size viewport, so re-apply it now that real dimensions exist —
+      // otherwise tiles only load after a manual zoom.
+      if (!wasVisibleRef.current) {
+        wasVisibleRef.current = true
+        applyCameraRef.current?.()
+      }
     })
     resizeObserver.observe(containerRef.current)
 
@@ -240,31 +256,48 @@ export default function MapView({
     const map = mapRef.current
     if (!map) return
 
-    const instant = prefersInstantCamera()
+    const applyCamera = () => {
+      const instant = prefersInstantCamera()
 
-    const active = restaurants.find((r) => r.id === activeId)
-    if (active) {
-      if (instant) {
-        map.setView([active.latitude, active.longitude], 15, { animate: false })
-      } else {
-        map.flyTo([active.latitude, active.longitude], 15, { duration: 0.6 })
+      const active = restaurants.find((r) => r.id === activeId)
+      if (active) {
+        if (instant) {
+          map.setView([active.latitude, active.longitude], 15, {
+            animate: false,
+          })
+        } else {
+          map.flyTo([active.latitude, active.longitude], 15, { duration: 0.6 })
+        }
+        return
       }
-      return
+
+      const points: [number, number][] = restaurants.map((r) => [
+        r.latitude,
+        r.longitude,
+      ])
+      if (origin) points.push([origin.latitude, origin.longitude])
+
+      if (points.length === 1) {
+        map.setView(points[0], 14, { animate: false })
+      } else if (points.length > 1) {
+        map.fitBounds(L.latLngBounds(points), {
+          padding: [48, 48],
+          animate: !instant,
+        })
+      }
     }
 
-    const points: [number, number][] = restaurants.map((r) => [
-      r.latitude,
-      r.longitude,
-    ])
-    if (origin) points.push([origin.latitude, origin.longitude])
+    // Expose the latest camera logic so the resize observer can re-apply it
+    // when the map first becomes visible.
+    applyCameraRef.current = applyCamera
 
-    if (points.length === 1) {
-      map.setView(points[0], 14, { animate: false })
-    } else if (points.length > 1) {
-      map.fitBounds(L.latLngBounds(points), {
-        padding: [48, 48],
-        animate: !instant,
-      })
+    // Only drive the camera while the map has a real size. If it is still
+    // hidden (zero-size), the resize observer will apply the camera once it
+    // becomes visible — running it now would compute against a 0px viewport
+    // and leave tiles unloaded until a manual zoom.
+    const size = map.getSize()
+    if (size.x > 0 && size.y > 0) {
+      applyCamera()
     }
   }, [origin, restaurants, activeId])
 
