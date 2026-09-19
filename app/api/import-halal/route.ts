@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
+// Forces Vercel to bypass cached network pipelines entirely on reloads
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
@@ -8,7 +9,7 @@ export async function GET(request: Request) {
   const targetCity = searchParams.get('city');
 
   if (!targetCity) {
-    return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=Chicago' }, { status: 400 });
+    return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=Birmingham' }, { status: 400 });
   }
 
   const apiKey = process.env.PARSE_API_KEY;
@@ -25,14 +26,14 @@ export async function GET(request: Request) {
   const supabase = createClient(supabaseUrl, supabaseRole);
 
   try {
-    // ✅ 1. Updated with your exact new working scraper ID
-    const baseUrl = "https://api.parse.bot/scraper/7d525839-78db-4e5b-a6cb-7838a2d1a23e/search_restaurants";
+    // 1. Target URL utilizing your verified working scraper ID
+    const baseUrl = "https://parse.bot";
     const targetUrl = new URL(baseUrl);
     
     targetUrl.searchParams.append("location", targetCity.trim());
     targetUrl.searchParams.append("limit", "20"); 
 
-    // ✅ 2. Integrated the mandatory API-Snapshot-Version header from your curl
+    // 2. Fetch data incorporating the mandatory snapshot version header 
     const response = await fetch(targetUrl.toString(), {
       method: 'GET',
       headers: { 
@@ -46,42 +47,36 @@ export async function GET(request: Request) {
     const rawText = await response.text();
 
     if (!rawText || rawText.trim() === "") {
-      return NextResponse.json({ 
-        error: "Parse API returned an empty response string.",
-        hint: "Double check your PARSE_API_KEY in Vercel to ensure it matches perfectly."
-      }, { status: 500 });
+      return NextResponse.json({ error: "Parse API returned an empty response string." }, { status: 500 });
     }
 
     if (rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
       return NextResponse.json({
-        error: "The API endpoint configuration returned a webpage layout rather than clean data.",
+        error: "The API endpoint configuration returned a webpage layout rather than clean data rows.",
         htmlSnippet: rawText.substring(0, 400)
       }, { status: 500 });
     }
 
     const data = JSON.parse(rawText);
     
-    // Safe Array Extraction layer
+    // 3. Flexible array resolver matching Parse's deep JSON nested structure
     let targetRestaurants: any[] = [];
-    if (Array.isArray(data)) {
+    if (data && data.data && Array.isArray(data.data.restaurants)) {
+      targetRestaurants = data.data.restaurants;
+    } else if (Array.isArray(data.restaurants)) {
+      targetRestaurants = data.restaurants;
+    } else if (Array.isArray(data)) {
       targetRestaurants = data;
     } else if (data && typeof data === 'object') {
-      const plausibleArray = data.restaurants || data.results || data.data || data.items;
-      if (Array.isArray(plausibleArray)) {
-        targetRestaurants = plausibleArray;
-      } else {
-        const foundArray = Object.values(data).find(val => Array.isArray(val));
-        if (Array.isArray(foundArray)) {
-          targetRestaurants = foundArray;
-        } else {
-          targetRestaurants = [data];
-        }
-      }
+      const fallback = data.results || data.data || data.items;
+      targetRestaurants = Array.isArray(fallback) ? fallback : [data];
     }
 
     let insertedCount = 0;
     let skippedCount = 0;
+    let databaseErrors: any[] = [];
 
+    // 4. Upsert iteration loop targeting your Supabase table columns
     for (const item of targetRestaurants) {
       if (!item || typeof item !== 'object' || !item.name) continue; 
 
@@ -105,8 +100,12 @@ export async function GET(request: Request) {
           { onConflict: 'match_key' }
         );
 
-      if (!error) insertedCount++;
-      else skippedCount++;
+      if (!error) {
+        insertedCount++;
+      } else {
+        skippedCount++;
+        databaseErrors.push({ restaurant: item.name, message: error.message, details: error.details });
+      }
     }
 
     return NextResponse.json({
@@ -114,8 +113,9 @@ export async function GET(request: Request) {
       city: targetCity,
       total_found: targetRestaurants.length,
       newly_inserted: insertedCount,
-      duplicates_skipped: skippedCount,
-      debug_raw_payload: data 
+      duplicates_or_errors_skipped: skippedCount,
+      supabase_diagnostic_logs: databaseErrors,
+      raw_payload_structure_keys: Object.keys(data)
     });
 
   } catch (error: any) {
