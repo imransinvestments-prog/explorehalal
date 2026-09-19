@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   const targetCity = searchParams.get('city');
 
   if (!targetCity) {
-    return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=Birmingham' }, { status: 400 });
+    return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=Manchester' }, { status: 400 });
   }
 
   const apiKey = process.env.PARSE_API_KEY;
@@ -18,32 +18,29 @@ export async function GET(request: Request) {
   if (!apiKey || !supabaseUrl || !supabaseRole) {
     return NextResponse.json({ 
       error: 'Required environment variables are completely missing inside Vercel.',
-      status: { hasApiKey: !!apiKey, hasSubabaseUrl: !!supabaseUrl, hasSupabaseRole: !!supabaseRole }
+      status: { hasApiKey: !!apiKey, hasSupabaseUrl: !!supabaseUrl, hasSupabaseRole: !!supabaseRole }
     }, { status: 500 });
   }
 
   const supabase = createClient(supabaseUrl, supabaseRole);
 
   try {
-    const targetUrl = "https://parse.bot";
+    // ✅ 1. Rebuild the exact URL format specified by the Parse dashboard snippet
+    const baseUrl = "https://api.parse.bot/scraper/5f5c1663-acb9-42c4-a4ad-386c0f7013aa/search_restaurants";
+    const targetUrl = new URL(baseUrl);
     
-    // ✅ Re-structured payload nesting your values under Parse's marketplace parameter layer
-    const response = await fetch(targetUrl, {
-      method: 'POST',
+    // ✅ 2. Append parameters directly onto the URL search queries
+    targetUrl.searchParams.append("location", targetCity.trim());
+    targetUrl.searchParams.append("limit", "20"); // Adjusted safely within your credit tier bounds
+
+    // ✅ 3. Execute an authenticated GET connection mapping perfectly to your curl footprint
+    const response = await fetch(targetUrl.toString(), {
+      method: 'GET',
       headers: { 
         'X-API-Key': apiKey,
-        'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
-      cache: 'no-store',
-      body: JSON.stringify({
-        inputs: [
-          {
-            location: targetCity.trim(),
-            limit: 20
-          }
-        ]
-      })
+      cache: 'no-store' // Bypasses Vercel edge-network proxy storage caches completely
     });
 
     const rawText = await response.text();
