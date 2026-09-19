@@ -38,7 +38,7 @@ export async function GET(request: Request) {
       },
       body: JSON.stringify({
         location: targetCity,
-        limit: 100
+        limit: 50
       })
     });
 
