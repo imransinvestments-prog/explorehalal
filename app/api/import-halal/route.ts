@@ -25,14 +25,12 @@ export async function GET(request: Request) {
   const supabase = createClient(supabaseUrl, supabaseRole);
 
   try {
-    // ✅ 1. Updated with your exact new working scraper ID
     const baseUrl = "https://api.parse.bot/scraper/7d525839-78db-4e5b-a6cb-7838a2d1a23e/search_restaurants";
     const targetUrl = new URL(baseUrl);
     
     targetUrl.searchParams.append("location", targetCity.trim());
     targetUrl.searchParams.append("limit", "20"); 
 
-    // ✅ 2. Integrated the mandatory API-Snapshot-Version header from your curl
     const response = await fetch(targetUrl.toString(), {
       method: 'GET',
       headers: { 
