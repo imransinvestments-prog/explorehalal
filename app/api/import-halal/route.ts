@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   const targetCity = searchParams.get('city');
 
   if (!targetCity) {
-    return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=Manchester' }, { status: 400 });
+    return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=Birmingham' }, { status: 400 });
   }
 
   const apiKey = process.env.PARSE_API_KEY;
@@ -25,13 +25,14 @@ export async function GET(request: Request) {
   const supabase = createClient(supabaseUrl, supabaseRole);
 
   try {
-    // ✅ Uses the verified scraper endpoint URL path that fetches data successfully
+    // ✅ Reverted to the exact base URL that successfully pulled the raw layout earlier
     const baseUrl = "https://parse.bot";
     const targetUrl = new URL(baseUrl);
     
     targetUrl.searchParams.append("location", targetCity.trim());
     targetUrl.searchParams.append("limit", "20"); 
 
+    // ✅ Exactly identical GET header configuration that was working for you
     const response = await fetch(targetUrl.toString(), {
       method: 'GET',
       headers: { 
@@ -57,7 +58,7 @@ export async function GET(request: Request) {
 
     const data = JSON.parse(rawText);
     
-    // Safely locates Parse's custom nested array layout structure
+    // ✅ Restored the broad array extraction selector
     let targetRestaurants: any[] = [];
     if (data && data.data && Array.isArray(data.data.restaurants)) {
       targetRestaurants = data.data.restaurants;
@@ -72,7 +73,7 @@ export async function GET(request: Request) {
 
     let insertedCount = 0;
     let skippedCount = 0;
-    let databaseErrors: any[] = [];
+    let databaseErrors: any[] = []; // 🔍 Captures silent database rejections
 
     for (const item of targetRestaurants) {
       if (!item || typeof item !== 'object' || !item.name) continue; 
@@ -81,7 +82,7 @@ export async function GET(request: Request) {
       const cleanAddr = (item.address || '').toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
       const matchKey = `${cleanName}_${cleanAddr}`;
 
-      // Force formatting parsing to convert arrays cleanly to text string formats
+      // Convert cuisine array securely to string formatting to protect text columns
       const cuisineString = Array.isArray(item.cuisine) 
         ? item.cuisine.join(', ') 
         : (typeof item.cuisine === 'string' ? item.cuisine : "Halal");
@@ -106,7 +107,7 @@ export async function GET(request: Request) {
         insertedCount++;
       } else {
         skippedCount++;
-        // ✅ Intercepts the silent database blocker error message
+        // Log the exact blocker error object returned from Supabase
         databaseErrors.push({ 
           restaurant: item.name, 
           message: error.message, 
@@ -122,7 +123,8 @@ export async function GET(request: Request) {
       total_found: targetRestaurants.length,
       newly_inserted: insertedCount,
       duplicates_or_errors_skipped: skippedCount,
-      supabase_diagnostic_logs: databaseErrors
+      supabase_diagnostic_logs: databaseErrors, // 🔍 This prints out the database error message
+      debug_raw_api_response: data
     });
 
   } catch (error: any) {
