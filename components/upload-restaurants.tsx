@@ -58,10 +58,142 @@ function parseWorkbook(data: ArrayBuffer): UploadRow[] {
   })
 }
 
+/** Map common GeoJSON / OSM property keys onto our canonical fields. */
+const GEOJSON_ALIASES: Record<string, keyof UploadRow> = {
+  name: "name",
+  "addr:housename": "name",
+  brand: "name",
+  operator: "name",
+  address: "address",
+  "addr:full": "address",
+  "full address": "address",
+  postcode: "postcode",
+  "addr:postcode": "postcode",
+  "post code": "postcode",
+  cuisine: "cuisine_type",
+  cuisine_type: "cuisine_type",
+  "cuisine type": "cuisine_type",
+  type: "cuisine_type",
+  certification: "certification_body",
+  certification_body: "certification_body",
+  "certification body": "certification_body",
+  certification_status: "certification_status",
+  status: "certification_status",
+  source: "source",
+}
+
+/** Pull a representative { lat, lng } out of any GeoJSON geometry. */
+function coordsFromGeometry(geometry: unknown): { lat: number; lng: number } | null {
+  if (!geometry || typeof geometry !== "object") return null
+  const g = geometry as { type?: string; coordinates?: unknown; geometries?: unknown[] }
+  if (g.type === "GeometryCollection" && Array.isArray(g.geometries)) {
+    for (const child of g.geometries) {
+      const c = coordsFromGeometry(child)
+      if (c) return c
+    }
+    return null
+  }
+  // GeoJSON positions are [lng, lat]; recurse until we hit the first pair.
+  const findFirstPair = (c: unknown): number[] | null => {
+    if (Array.isArray(c) && typeof c[0] === "number" && typeof c[1] === "number") {
+      return c as number[]
+    }
+    if (Array.isArray(c)) {
+      for (const item of c) {
+        const found = findFirstPair(item)
+        if (found) return found
+      }
+    }
+    return null
+  }
+  const pair = findFirstPair(g.coordinates)
+  if (!pair) return null
+  const [lng, lat] = pair
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null
+}
+
+/** Assemble a street address from OSM addr:* parts when there's no single field. */
+function buildAddressFromProps(props: Record<string, unknown>): string {
+  const full = props["addr:full"] ?? props["addr:housename"]
+  if (full && String(full).trim()) return String(full).trim()
+  const parts = [
+    props["addr:housenumber"],
+    props["addr:street"],
+    props["addr:suburb"],
+    props["addr:city"],
+  ]
+    .map((p) => (p == null ? "" : String(p).trim()))
+    .filter(Boolean)
+  return parts.join(", ")
+}
+
+function parseGeoJSON(text: string): UploadRow[] {
+  const json = JSON.parse(text)
+  const features: unknown[] =
+    json?.type === "FeatureCollection" && Array.isArray(json.features)
+      ? json.features
+      : json?.type === "Feature"
+        ? [json]
+        : Array.isArray(json)
+          ? json
+          : []
+
+  const out: UploadRow[] = []
+  for (const feature of features) {
+    if (!feature || typeof feature !== "object") continue
+    const f = feature as { properties?: Record<string, unknown>; geometry?: unknown }
+    const props = f.properties ?? {}
+    const row: UploadRow = {}
+    for (const [key, value] of Object.entries(props)) {
+      const field = GEOJSON_ALIASES[key.trim().toLowerCase()]
+      if (field && value != null && String(value).trim()) {
+        row[field] = String(value).trim()
+      }
+    }
+    if (!row.address) {
+      const addr = buildAddressFromProps(props)
+      if (addr) row.address = addr
+    }
+    const coords = coordsFromGeometry(f.geometry)
+    if (coords) {
+      row.latitude = coords.lat
+      row.longitude = coords.lng
+    }
+    // Keep any feature that has at least a name or a postcode to work with.
+    if (row.name || row.postcode) out.push(row)
+  }
+  return out
+}
+
+/**
+ * Remove duplicate venues within a single file before import. Matches on name
+ * plus either postcode or (for coordinate-only GeoJSON points) rounded lat/lng.
+ */
+function dedupeRows(rows: UploadRow[]): { rows: UploadRow[]; duplicatesRemoved: number } {
+  const seen = new Set<string>()
+  const out: UploadRow[] = []
+  for (const r of rows) {
+    const name = (r.name ?? "").toString().trim().toLowerCase()
+    const postcode = (r.postcode ?? "").toString().trim().toLowerCase()
+    const lat = r.latitude != null && `${r.latitude}` !== "" ? Number(r.latitude) : null
+    const lng = r.longitude != null && `${r.longitude}` !== "" ? Number(r.longitude) : null
+    const geo =
+      lat != null && lng != null && Number.isFinite(lat) && Number.isFinite(lng)
+        ? `${lat.toFixed(4)},${lng.toFixed(4)}`
+        : ""
+    const key = `${name}|${postcode || geo}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(r)
+  }
+  return { rows: out, duplicatesRemoved: rows.length - out.length }
+}
+
 export function UploadRestaurants() {
   const inputRef = useRef<HTMLInputElement>(null)
   const [fileName, setFileName] = useState<string | null>(null)
   const [rows, setRows] = useState<UploadRow[]>([])
+  const [duplicatesRemoved, setDuplicatesRemoved] = useState(0)
   const [parseError, setParseError] = useState<string | null>(null)
   const [summary, setSummary] = useState<UploadSummary | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -69,31 +201,45 @@ export function UploadRestaurants() {
   function handleFile(file: File) {
     setParseError(null)
     setSummary(null)
+    setDuplicatesRemoved(0)
     setFileName(file.name)
+    const isGeoJSON = /\.(geojson|json)$/i.test(file.name)
     const reader = new FileReader()
     reader.onload = (e) => {
       try {
-        const parsed = parseWorkbook(e.target?.result as ArrayBuffer)
+        const parsed = isGeoJSON
+          ? parseGeoJSON(String(e.target?.result ?? ""))
+          : parseWorkbook(e.target?.result as ArrayBuffer)
         const cleaned = parsed.filter((r) => r.name || r.postcode)
-        if (cleaned.length === 0) {
+        const { rows: deduped, duplicatesRemoved } = dedupeRows(cleaned)
+        if (deduped.length === 0) {
           setParseError(
-            "No usable rows found. Make sure your sheet has 'name' and 'postcode' columns.",
+            isGeoJSON
+              ? "No usable features found. Each GeoJSON feature needs a name (and ideally a postcode or Point coordinates)."
+              : "No usable rows found. Make sure your sheet has 'name' and 'postcode' columns.",
           )
           setRows([])
         } else {
-          setRows(cleaned)
+          setRows(deduped)
+          setDuplicatesRemoved(duplicatesRemoved)
         }
       } catch {
-        setParseError("Could not read that file. Please upload a valid .xlsx or .csv file.")
+        setParseError(
+          isGeoJSON
+            ? "Could not read that file. Please upload a valid .geojson file."
+            : "Could not read that file. Please upload a valid .xlsx or .csv file.",
+        )
         setRows([])
       }
     }
-    reader.readAsArrayBuffer(file)
+    if (isGeoJSON) reader.readAsText(file)
+    else reader.readAsArrayBuffer(file)
   }
 
   function reset() {
     setFileName(null)
     setRows([])
+    setDuplicatesRemoved(0)
     setParseError(null)
     setSummary(null)
     if (inputRef.current) inputRef.current.value = ""
@@ -129,9 +275,10 @@ export function UploadRestaurants() {
           <div className="flex flex-col gap-1">
             <p className="font-medium text-foreground">Upload a spreadsheet</p>
             <p className="text-sm text-muted-foreground text-pretty">
-              Accepts .xlsx or .csv. Required columns: <span className="font-mono">name</span> and{" "}
-              <span className="font-mono">postcode</span>. Optional: address, cuisine_type,
-              certification_body (HMC/HFA/BOTH), certification_status, source.
+              Accepts .xlsx, .csv or .geojson. Required: <span className="font-mono">name</span> plus a{" "}
+              <span className="font-mono">postcode</span> (or, for GeoJSON, Point coordinates we
+              reverse-geocode). Optional: address, cuisine_type, certification_body (HMC/HFA/BOTH),
+              certification_status, source. Duplicate venues in the file are removed automatically.
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-3">
@@ -146,7 +293,7 @@ export function UploadRestaurants() {
           <input
             ref={inputRef}
             type="file"
-            accept=".xlsx,.xls,.csv"
+            accept=".xlsx,.xls,.csv,.geojson,.json"
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0]
@@ -182,6 +329,12 @@ export function UploadRestaurants() {
                 {rows.length} row{rows.length === 1 ? "" : "s"} ready to import
                 {rows.length > preview.length && ` (showing first ${preview.length})`}
               </p>
+              {duplicatesRemoved > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {duplicatesRemoved} duplicate{duplicatesRemoved === 1 ? "" : "s"} removed from this
+                  file before import
+                </p>
+              )}
             </div>
             <Button onClick={handleSubmit} disabled={isPending} className="gap-2">
               {isPending ? "Importing…" : `Import ${rows.length} row${rows.length === 1 ? "" : "s"}`}

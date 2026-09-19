@@ -83,6 +83,10 @@ export interface UploadRow {
   certification_body?: string
   certification_status?: string
   source?: string
+  // GeoJSON geometries carry coordinates directly. When present we trust them
+  // and skip geocoding; a missing postcode is then reverse-geocoded from them.
+  latitude?: number | string
+  longitude?: number | string
 }
 
 export interface UploadRowResult {
@@ -132,6 +136,56 @@ function extractPostcodeFromAddress(address?: string): string {
 }
 
 /**
+ * Remove duplicate rows within a single upload, BEFORE any database work — so a
+ * file that lists the same venue twice only results in one write. Two rows are
+ * the same venue when they share a name and either the same postcode or (for
+ * GeoJSON points with no postcode) effectively the same coordinates (~11m).
+ * The first occurrence wins.
+ */
+function dedupeUploadRows(rows: UploadRow[]): UploadRow[] {
+  const seen = new Set<string>()
+  const out: UploadRow[] = []
+  for (const r of rows) {
+    const name = (r.name ?? "").toString().trim().toLowerCase()
+    const postcode = (r.postcode ?? "").toString().trim().toLowerCase()
+    const lat = r.latitude != null && `${r.latitude}` !== "" ? Number(r.latitude) : null
+    const lng = r.longitude != null && `${r.longitude}` !== "" ? Number(r.longitude) : null
+    const geo =
+      lat !== null && lng !== null && Number.isFinite(lat) && Number.isFinite(lng)
+        ? `${lat.toFixed(4)},${lng.toFixed(4)}`
+        : ""
+    // Rows with no locator at all can't be deduped meaningfully; pass them
+    // through so they're skipped later with a proper reason.
+    if (!name && !postcode && !geo) {
+      out.push(r)
+      continue
+    }
+    const key = `${name}|${postcode || geo}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(r)
+  }
+  return out
+}
+
+/** Reverse-geocode a lat/lng into the nearest UK postcode via postcodes.io. */
+async function reverseGeocode(lat: number, lng: number): Promise<string> {
+  try {
+    const res = await fetch(
+      `https://api.postcodes.io/postcodes?lon=${lng}&lat=${lat}&limit=1&radius=2000`,
+    )
+    if (res.ok) {
+      const json = await res.json()
+      const pc = json?.result?.[0]?.postcode
+      if (pc) return String(pc).trim().toUpperCase()
+    }
+  } catch {
+    // Best-effort — the caller skips the row if no postcode can be resolved.
+  }
+  return ""
+}
+
+/**
  * Validate, geocode and upsert a batch of restaurant rows parsed from an
  * uploaded spreadsheet. Runs with the service-role client (RLS-bypassing),
  * so it must stay server-only. Dedupes on name + postcode: existing rows are
@@ -144,15 +198,39 @@ export async function uploadRestaurants(rows: UploadRow[]): Promise<UploadSummar
   let updated = 0
   let skipped = 0
 
-  for (let i = 0; i < rows.length; i++) {
-    const raw = rows[i]
+  // De-dupe the uploaded rows against each other before touching the database.
+  const deduped = dedupeUploadRows(rows)
+
+  for (let i = 0; i < deduped.length; i++) {
+    const raw = deduped[i]
     const rowNum = i + 1
     const name = (raw.name ?? "").toString().trim()
-    // Prefer the postcode column, but fall back to scanning the address so
-    // rows that only embed the postcode in the address aren't skipped.
-    const postcode =
+
+    // Coordinates may come straight from a GeoJSON geometry. When present we
+    // trust them and skip geocoding entirely.
+    const providedLat =
+      raw.latitude !== undefined && raw.latitude !== null && `${raw.latitude}` !== ""
+        ? Number(raw.latitude)
+        : null
+    const providedLng =
+      raw.longitude !== undefined && raw.longitude !== null && `${raw.longitude}` !== ""
+        ? Number(raw.longitude)
+        : null
+    const hasCoords =
+      providedLat !== null &&
+      providedLng !== null &&
+      Number.isFinite(providedLat) &&
+      Number.isFinite(providedLng)
+
+    // Prefer the postcode column, fall back to scanning the address, and as a
+    // last resort (GeoJSON points with only coordinates) reverse-geocode the
+    // point into a UK postcode so the NOT NULL postcode column is satisfied.
+    let postcode =
       (raw.postcode ?? "").toString().trim().toUpperCase() ||
       extractPostcodeFromAddress(raw.address)
+    if (!postcode && hasCoords) {
+      postcode = await reverseGeocode(providedLat as number, providedLng as number)
+    }
 
     if (!name || !postcode) {
       skipped++
@@ -179,7 +257,9 @@ export async function uploadRestaurants(rows: UploadRow[]): Promise<UploadSummar
       continue
     }
 
-    const coords = await geocodeLocation(postcode)
+    const coords = hasCoords
+      ? { latitude: providedLat as number, longitude: providedLng as number }
+      : await geocodeLocation(postcode)
     if (!coords) {
       skipped++
       results.push({
