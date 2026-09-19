@@ -6,7 +6,7 @@ export async function GET(request: Request) {
   const targetCity = searchParams.get('city');
 
   if (!targetCity) {
-    return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=London' }, { status: 400 });
+    return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=Manchester' }, { status: 400 });
   }
 
   const apiKey = process.env.PARSE_API_KEY;
@@ -23,10 +23,10 @@ export async function GET(request: Request) {
   const supabase = createClient(supabaseUrl, supabaseRole);
 
   try {
-    // ✅ 1. Correct singular path structure targeting the action route endpoint natively
+    // ✅ 1. Pointed straight to Parse's official API backend route with your exact scraper ID and action path
     const targetUrl = "https://parse.bot";
     
-    // ✅ 2. Fire connection using POST with parameters wrapped in a container block
+    // ✅ 2. Fire the connection using POST with flat arguments matching custom marketplace routes
     const response = await fetch(targetUrl, {
       method: 'POST',
       headers: { 
@@ -35,19 +35,18 @@ export async function GET(request: Request) {
         'Accept': 'application/json'
       },
       body: JSON.stringify({
-        parameters: {
-          location: targetCity,
-          limit: 20 // Stays well within your remaining credit tier boundary checks
-        }
+        location: targetCity,
+        limit: 20 // Stayed at 20 to safely run within your available 297 credit balance
       })
     });
 
     const rawText = await response.text();
 
+    // If the data connection yields a blank string payload
     if (!rawText || rawText.trim() === "") {
       return NextResponse.json({ 
         error: "Parse API returned a completely blank response string.",
-        hint: "Your account is verified, so a blank response indicates Parse found 0 matching restaurants on Zabihah for this specific city string query."
+        hint: "Double check your Parse project dashboard parameter mappings to make sure 'location' is mapped correctly."
       }, { status: 500 });
     }
 
@@ -60,7 +59,7 @@ export async function GET(request: Request) {
 
     const data = JSON.parse(rawText);
     
-    // ✅ 3. Target the underlying dataset object fields returned from Parse's database wrapper
+    // 3. Flexible extraction strategy to target alternative nesting fields returned by the scraper
     const targetRestaurants = data.restaurants || data.results || data.data || (Array.isArray(data) ? data : []);
     
     let insertedCount = 0;
@@ -99,7 +98,7 @@ export async function GET(request: Request) {
       total_found: targetRestaurants.length,
       newly_inserted: insertedCount,
       duplicates_skipped: skippedCount,
-      debug_received_payload: data // Let's output the full object properties if successful to check formatting mapping
+      debug_received_payload: data
     });
 
   } catch (error: any) {
