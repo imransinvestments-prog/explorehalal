@@ -25,19 +25,26 @@ export async function GET(request: Request) {
   const supabase = createClient(supabaseUrl, supabaseRole);
 
   try {
-    const baseUrl = "https://parse.bot";
-    const targetUrl = new URL(baseUrl);
+    // ✅ 1. Standardized Canonical global Parse execution gateway URL route
+    const targetUrl = "https://parse.bot";
     
-    targetUrl.searchParams.append("location", targetCity.trim());
-    targetUrl.searchParams.append("limit", "20"); 
-
-    const response = await fetch(targetUrl.toString(), {
-      method: 'GET',
+    // ✅ 2. Fire the connection request with variables matching your validated workspace layout
+    const response = await fetch(targetUrl, {
+      method: 'POST',
       headers: { 
-        'X-API-Key': apiKey,
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
-      cache: 'no-store' 
+      cache: 'no-store',
+      body: JSON.stringify({
+        scraper_id: "5f5c1663-acb9-42c4-a4ad-386c0f7013aa",
+        action: "search_restaurants",
+        variables: {
+          location: targetCity.trim(),
+          limit: 20
+        }
+      })
     });
 
     const rawText = await response.text();
@@ -55,17 +62,15 @@ export async function GET(request: Request) {
 
     const data = JSON.parse(rawText);
     
-    // ✅ Bulletproof Array Locator: Safely extracts the valid array regardless of Parse's field naming choice
+    // Flexible Array Locator: Safely extracts the valid array regardless of Parse's field naming choice
     let targetRestaurants: any[] = [];
     if (Array.isArray(data)) {
       targetRestaurants = data;
     } else if (data && typeof data === 'object') {
-      // Prioritize known array fields returned by Parse's data layer
       const plausibleArray = data.restaurants || data.results || data.data || data.items;
       if (Array.isArray(plausibleArray)) {
         targetRestaurants = plausibleArray;
       } else {
-        // Fallback: Dynamically search through object properties to find any nested list array
         const foundArray = Object.values(data).find(val => Array.isArray(val));
         if (Array.isArray(foundArray)) {
           targetRestaurants = foundArray;
@@ -76,7 +81,6 @@ export async function GET(request: Request) {
     let insertedCount = 0;
     let skippedCount = 0;
 
-    // Process the validated list array smoothly
     for (const item of targetRestaurants) {
       if (!item || typeof item !== 'object' || !item.name) continue; 
 
@@ -110,7 +114,7 @@ export async function GET(request: Request) {
       total_found: targetRestaurants.length,
       newly_inserted: insertedCount,
       duplicates_skipped: skippedCount,
-      raw_api_response_shape: data // Let's output the top-level keys to double check layout data strings
+      raw_api_response_shape: data 
     });
 
   } catch (error: any) {
