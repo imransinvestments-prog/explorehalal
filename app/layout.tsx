@@ -52,6 +52,7 @@ export const metadata: Metadata = {
     'halal food finder',
     'halal restaurant map',
   ],
+  manifest: '/manifest.json',
   alternates: {
     canonical: '/',
   },
