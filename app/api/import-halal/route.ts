@@ -19,10 +19,8 @@ export async function GET(request: Request) {
   );
 
   try {
-    // ✅ 1. Correct canonical API root structure
     const targetUrl = "https://parse.bot";
     
-    // ✅ 2. Fire the connection using POST to deliver JSON parameters safely
     const response = await fetch(targetUrl, {
       method: 'POST',
       headers: { 
@@ -30,16 +28,26 @@ export async function GET(request: Request) {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
-      // Pass the options array inside the payload body object
+      // ✅ Custom variables must be wrapped inside a "parameters" object block
       body: JSON.stringify({
-        location: targetCity,
-        limit: 100
+        parameters: {
+          location: targetCity,
+          limit: 100
+        }
       })
     });
 
     const rawText = await response.text();
 
-    // Protection check to flag accidental server route issues
+    // 1. Safety check for completely blank or empty API returns
+    if (!rawText || rawText.trim() === "") {
+      return NextResponse.json({ 
+        error: "Parse API returned an empty response.",
+        hint: "Your authentication key or endpoint parameters may be incorrectly configured in Parse. Check your Parse.bot usage limits."
+      }, { status: 500 });
+    }
+
+    // 2. Safety check for HTML fallback pages
     if (rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
       return NextResponse.json({
         error: "The scraper pipeline returned a webpage layout instead of structured JSON data.",
@@ -49,14 +57,14 @@ export async function GET(request: Request) {
 
     const data = JSON.parse(rawText);
     
-    // ✅ 3. Safely locate the records array inside Parse's standard payload delivery keys
+    // Safely look through alternative formatting arrays returned by the parser
     const targetRestaurants = data.restaurants || data.results || data.data || (Array.isArray(data) ? data : []);
     
     let insertedCount = 0;
     let skippedCount = 0;
 
     for (const item of targetRestaurants) {
-      if (!item.name) continue; // Skip entries missing basic descriptors
+      if (!item.name) continue; 
 
       const cleanName = item.name.toLowerCase().replace(/[^a-z0-9]/g, '');
       const cleanAddr = (item.address || '').toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
