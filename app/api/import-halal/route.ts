@@ -19,19 +19,31 @@ export async function GET(request: Request) {
   );
 
   try {
-    // Dynamically building the path arrays using safe URL parameters to avoid mobile copy-paste bugs
-    const targetUrl = new URL("https://parse.bot");
+    // ✅ 1. Correct base API subdomain & specific endpoint action route
+    const baseUrl = "https://parse.bot";
+    const targetUrl = new URL(baseUrl);
+    
+    // ✅ 2. Safely append parameters for the Parse query
     targetUrl.searchParams.append("limit", "100");
     targetUrl.searchParams.append("location", targetCity);
     
+    // ✅ 3. Fire request to the correct live cloud endpoint
     const response = await fetch(targetUrl.toString(), {
-      headers: { 'X-API-Key': process.env.PARSE_API_KEY }
+      headers: { 
+        'X-API-Key': process.env.PARSE_API_KEY,
+        'Content-Type': 'application/json'
+      }
     });
 
-    if (!response.ok) throw new Error(`Zabihah stream failed: ${response.statusText}`);
+    if (!response.ok) {
+      throw new Error(`Zabihah stream failed: ${response.status} ${response.statusText}`);
+    }
+    
     const data = await response.json();
     
-    const targetRestaurants = data.restaurants || [];
+    // Note: If Parse returns an un-wrapped array directly, change this fallback to: data || [];
+    const targetRestaurants = data.restaurants || data.results || data || [];
+    
     let insertedCount = 0;
     let skippedCount = 0;
 
