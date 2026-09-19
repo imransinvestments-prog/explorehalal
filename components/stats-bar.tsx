@@ -5,14 +5,6 @@ interface StatsBarProps {
   restaurants: Restaurant[]
 }
 
-/** Round down to a clean "+" figure, e.g. 3542 -> "3,500+". */
-function roundedPlus(n: number): string {
-  if (n < 20) return String(n)
-  const step = n >= 1000 ? 100 : 10
-  const floored = Math.floor(n / step) * step
-  return `${floored.toLocaleString("en-GB")}+`
-}
-
 /** Postcode areas double as UK town/city coverage (M = Manchester, B = Birmingham, …). */
 function countCities(restaurants: Restaurant[]): number {
   const areas = new Set<string>()
@@ -33,7 +25,7 @@ export function StatsBar({ restaurants }: StatsBarProps) {
   const stats = [
     {
       icon: Store,
-      value: roundedPlus(total),
+      value: total.toLocaleString("en-GB"),
       label: "Restaurants listed",
       sub: "Across our UK directory",
     },
@@ -45,7 +37,7 @@ export function StatsBar({ restaurants }: StatsBarProps) {
     },
     {
       icon: MapPin,
-      value: roundedPlus(cities),
+      value: cities.toLocaleString("en-GB"),
       label: "Areas covered",
       sub: "Towns & cities UK-wide",
     },
