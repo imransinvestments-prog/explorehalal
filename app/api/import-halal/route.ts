@@ -21,7 +21,7 @@ export async function GET(request: Request) {
 
   try {
     // 1. Query the live Parse.bot Zabihah mirror (Returns up to 300 restaurants per city)
-    const url = `https://parse.bot{encodeURIComponent(targetCity)}`;
+    const url = `https://parse.bot${encodeURIComponent(targetCity)}`;
     
     const response = await fetch(url, {
       headers: { 'X-API-Key': process.env.PARSE_API_KEY }
