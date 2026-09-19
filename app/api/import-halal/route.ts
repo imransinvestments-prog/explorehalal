@@ -29,7 +29,7 @@ export async function GET(request: Request) {
     const targetUrl = new URL(baseUrl);
     
     targetUrl.searchParams.append("location", targetCity.trim());
-    targetUrl.searchParams.append("limit", "20"); 
+    targetUrl.searchParams.append("limit", "200"); 
 
     const response = await fetch(targetUrl.toString(), {
       method: 'GET',
