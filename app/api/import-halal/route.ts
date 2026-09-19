@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-// Forces Vercel to bypass cached network pipelines entirely on reloads
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
@@ -9,7 +8,7 @@ export async function GET(request: Request) {
   const targetCity = searchParams.get('city');
 
   if (!targetCity) {
-    return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=Birmingham' }, { status: 400 });
+    return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=Manchester' }, { status: 400 });
   }
 
   const apiKey = process.env.PARSE_API_KEY;
@@ -26,14 +25,13 @@ export async function GET(request: Request) {
   const supabase = createClient(supabaseUrl, supabaseRole);
 
   try {
-    // 1. Target URL utilizing your verified working scraper ID
+    // ✅ Uses the verified scraper endpoint URL path that fetches data successfully
     const baseUrl = "https://parse.bot";
     const targetUrl = new URL(baseUrl);
     
     targetUrl.searchParams.append("location", targetCity.trim());
     targetUrl.searchParams.append("limit", "20"); 
 
-    // 2. Fetch data incorporating the mandatory snapshot version header 
     const response = await fetch(targetUrl.toString(), {
       method: 'GET',
       headers: { 
@@ -52,14 +50,14 @@ export async function GET(request: Request) {
 
     if (rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
       return NextResponse.json({
-        error: "The API endpoint configuration returned a webpage layout rather than clean data rows.",
+        error: "The API endpoint configuration returned a webpage layout rather than clean data.",
         htmlSnippet: rawText.substring(0, 400)
       }, { status: 500 });
     }
 
     const data = JSON.parse(rawText);
     
-    // 3. Flexible array resolver matching Parse's deep JSON nested structure
+    // Safely locates Parse's custom nested array layout structure
     let targetRestaurants: any[] = [];
     if (data && data.data && Array.isArray(data.data.restaurants)) {
       targetRestaurants = data.data.restaurants;
@@ -76,13 +74,17 @@ export async function GET(request: Request) {
     let skippedCount = 0;
     let databaseErrors: any[] = [];
 
-    // 4. Upsert iteration loop targeting your Supabase table columns
     for (const item of targetRestaurants) {
       if (!item || typeof item !== 'object' || !item.name) continue; 
 
       const cleanName = item.name.toLowerCase().replace(/[^a-z0-9]/g, '');
       const cleanAddr = (item.address || '').toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
       const matchKey = `${cleanName}_${cleanAddr}`;
+
+      // Force formatting parsing to convert arrays cleanly to text string formats
+      const cuisineString = Array.isArray(item.cuisine) 
+        ? item.cuisine.join(', ') 
+        : (typeof item.cuisine === 'string' ? item.cuisine : "Halal");
 
       const { error } = await supabase
         .from('restaurants')
@@ -91,7 +93,7 @@ export async function GET(request: Request) {
             name: item.name,
             address: item.address || "Address Not Listed",
             postcode: "See Address",
-            cuisine_type: Array.isArray(item.cuisine) ? item.cuisine.join(', ') : (item.cuisine || "Halal"),
+            cuisine_type: cuisineString,
             certification_body: item.halal_description || "Zabihah Community Verified",
             certification_status: item.halal_rank_tier || "Verified",
             source: "Zabihah.com Parse Import",
@@ -104,7 +106,13 @@ export async function GET(request: Request) {
         insertedCount++;
       } else {
         skippedCount++;
-        databaseErrors.push({ restaurant: item.name, message: error.message, details: error.details });
+        // ✅ Intercepts the silent database blocker error message
+        databaseErrors.push({ 
+          restaurant: item.name, 
+          message: error.message, 
+          details: error.details,
+          code: error.code 
+        });
       }
     }
 
@@ -114,8 +122,7 @@ export async function GET(request: Request) {
       total_found: targetRestaurants.length,
       newly_inserted: insertedCount,
       duplicates_or_errors_skipped: skippedCount,
-      supabase_diagnostic_logs: databaseErrors,
-      raw_payload_structure_keys: Object.keys(data)
+      supabase_diagnostic_logs: databaseErrors
     });
 
   } catch (error: any) {
