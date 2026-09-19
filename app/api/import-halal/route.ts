@@ -9,55 +9,57 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Please provide a city parameter, e.g., ?city=London' }, { status: 400 });
   }
 
-  if (!process.env.PARSE_API_KEY || !process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    return NextResponse.json({ error: 'Required environment variables are missing' }, { status: 500 });
+  // Fallback checks to help you diagnose environment synchronization gaps
+  const apiKey = process.env.PARSE_API_KEY;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!apiKey || !supabaseUrl || !supabaseRole) {
+    return NextResponse.json({ 
+      error: 'Required environment variables are completely missing inside Vercel.',
+      status: { hasApiKey: !!apiKey, hasSubabaseUrl: !!supabaseUrl, hasSupabaseRole: !!supabaseRole }
+    }, { status: 500 });
   }
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-  );
+  const supabase = createClient(supabaseUrl, supabaseRole);
 
   try {
-    const targetUrl = "https://parse.bot";
+    // ✅ Reverted back to the official GET layout matching standard endpoint structures
+    const baseUrl = "https://parse.bot";
+    const targetUrl = new URL(baseUrl);
     
-    const response = await fetch(targetUrl, {
-      method: 'POST',
+    // Pass queries via URL string params directly
+    targetUrl.searchParams.append("location", targetCity);
+    targetUrl.searchParams.append("limit", "100");
+    
+    const response = await fetch(targetUrl.toString(), {
+      method: 'GET',
       headers: { 
-        'X-API-Key': process.env.PARSE_API_KEY,
-        'Content-Type': 'application/json',
+        'X-API-Key': apiKey,
         'Accept': 'application/json'
-      },
-      // ✅ Custom variables must be wrapped inside a "parameters" object block
-      body: JSON.stringify({
-        parameters: {
-          location: targetCity,
-          limit: 100
-        }
-      })
+      }
     });
 
     const rawText = await response.text();
 
-    // 1. Safety check for completely blank or empty API returns
+    // Catch if the data pipeline yields completely blank records
     if (!rawText || rawText.trim() === "") {
       return NextResponse.json({ 
-        error: "Parse API returned an empty response.",
-        hint: "Your authentication key or endpoint parameters may be incorrectly configured in Parse. Check your Parse.bot usage limits."
+        error: "Parse API returned a completely empty response string.",
+        solutionHint: "1. Go to Vercel Settings -> Environment Variables and verify PARSE_API_KEY matches your token perfectly. 2. Open Parse.bot dashboard and click 'Send request' inside the search_restaurants tab manually to verify it has data."
       }, { status: 500 });
     }
 
-    // 2. Safety check for HTML fallback pages
     if (rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
       return NextResponse.json({
-        error: "The scraper pipeline returned a webpage layout instead of structured JSON data.",
+        error: "The API endpoint returned a webpage instead of raw json data.",
         htmlSnippet: rawText.substring(0, 400)
       }, { status: 500 });
     }
 
     const data = JSON.parse(rawText);
     
-    // Safely look through alternative formatting arrays returned by the parser
+    // Dynamically target nested properties or check for a base list array wrapper
     const targetRestaurants = data.restaurants || data.results || data.data || (Array.isArray(data) ? data : []);
     
     let insertedCount = 0;
@@ -95,7 +97,8 @@ export async function GET(request: Request) {
       city: targetCity,
       total_found: targetRestaurants.length,
       newly_inserted: insertedCount,
-      duplicates_skipped: skippedCount
+      duplicates_skipped: skippedCount,
+      raw_debug_sample: targetRestaurants.slice(0, 1) // Returns the first item to verify layout matches your columns
     });
 
   } catch (error: any) {
