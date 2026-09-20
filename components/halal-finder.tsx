@@ -27,6 +27,7 @@ import { SearchFilters, type Filters } from "./search-filters"
 import { FilterChips, INITIAL_CHIPS, type ChipState } from "./filter-chips"
 import { RestaurantList } from "./restaurant-list"
 import { StatsBar } from "./stats-bar"
+import { SplashScreen } from "./splash-screen"
 
 const MapView = dynamic(() => import("./map-view"), {
   ssr: false,
@@ -78,6 +79,7 @@ export function HalalFinder({ restaurants: allRestaurants }: HalalFinderProps) {
   const [pageSize, setPageSize] = useState<number | "all">(10)
   const [page, setPage] = useState(1)
   const [filtersOpen, setFiltersOpen] = useState(false)
+  const [showSplash, setShowSplash] = useState(true)
   const autoLocated = useRef(false)
 
   const cuisineOptions = useMemo(() => {
@@ -204,6 +206,10 @@ export function HalalFinder({ restaurants: allRestaurants }: HalalFinderProps) {
 
   return (
     <div className="min-h-screen bg-background">
+      {showSplash && (
+        <SplashScreen restaurants={allRestaurants} onDismiss={() => setShowSplash(false)} />
+      )}
+
       <header className="border-b border-border bg-card">
         <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-4 sm:px-6">
           <BrandLogo className="h-12 w-auto shrink-0 object-contain sm:h-14" />
@@ -212,38 +218,41 @@ export function HalalFinder({ restaurants: allRestaurants }: HalalFinderProps) {
             <p className="font-heading text-sm font-semibold leading-tight text-amber-400">
               UK Halal Restaurant Finder
             </p>
-            <p className="text-xs text-muted-foreground">
-              HMC &amp; HFA certified restaurants near you
-            </p>
           </div>
-          <nav className="ml-auto flex items-center gap-1.5" aria-label="Primary">
-            <Link
-              href="/forum"
-              aria-label="Forum"
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/10 hover:text-foreground sm:px-3"
-            >
-              <MessageSquare className="size-4" aria-hidden="true" />
-              <span className="hidden sm:inline">Forum</span>
-            </Link>
-            <Link
-              href="/sources"
-              aria-label="Data sources"
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/10 hover:text-foreground sm:px-3"
-            >
-              <HelpCircle className="size-4" aria-hidden="true" />
-              <span className="hidden sm:inline">Sources</span>
-            </Link>
-            <Link
-              href="/admin"
-              aria-label="Admin"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/10 hover:text-foreground sm:px-3"
-            >
-              <Lock className="size-3.5" aria-hidden="true" />
-              <span className="hidden sm:inline">Admin</span>
-            </Link>
-          </nav>
         </div>
       </header>
+
+      <nav
+        className="border-b border-border bg-card/60"
+        aria-label="Primary"
+      >
+        <div className="mx-auto flex max-w-6xl items-center gap-1.5 px-4 py-1.5 sm:px-6">
+          <Link
+            href="/forum"
+            aria-label="Forum"
+            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/10 hover:text-foreground sm:px-3"
+          >
+            <MessageSquare className="size-4" aria-hidden="true" />
+            <span>Forum</span>
+          </Link>
+          <Link
+            href="/sources"
+            aria-label="Data sources"
+            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/10 hover:text-foreground sm:px-3"
+          >
+            <HelpCircle className="size-4" aria-hidden="true" />
+            <span>Sources</span>
+          </Link>
+          <Link
+            href="/admin"
+            aria-label="Admin"
+            className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/10 hover:text-foreground sm:px-3"
+          >
+            <Lock className="size-3.5" aria-hidden="true" />
+            <span>Admin</span>
+          </Link>
+        </div>
+      </nav>
 
       <section className="border-b border-border bg-card/70 lg:sticky lg:top-0 lg:z-40 lg:[backdrop-filter:blur(8px)]">
         <div className="mx-auto max-w-6xl px-4 py-3 sm:px-6">
