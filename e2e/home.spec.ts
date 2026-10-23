@@ -39,9 +39,8 @@ test("returning visitors skip the splash", async ({ page }) => {
 })
 
 // Issue #21: Google Places image URLs expire, and onError misses failures that
-// happen before hydration, so a card can be left showing a broken image.
-// Fails reliably in CI (fast network: images fail before hydration). Remove .fixme with the fix.
-test.fixme("every card image loads or shows the fallback", async ({ page }) => {
+// happen before hydration, so a card could be left showing a broken image.
+test("every card image loads or shows the fallback", async ({ page }) => {
   await skipSplash(page)
   await page.goto("/")
   await expect(results(page).first()).toBeVisible()

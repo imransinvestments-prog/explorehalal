@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { MapPin, UtensilsCrossed, Navigation, CalendarClock, BadgeInfo, ExternalLink, Star } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { RestaurantWithDistance } from "@/lib/types"
@@ -74,6 +74,16 @@ export function RestaurantCard({
 
   const [imageFailed, setImageFailed] = useState(false)
   const hasRealImage = Boolean(restaurant.image_url) && !imageFailed
+  const imgRef = useRef<HTMLImageElement>(null)
+
+  // onError is only attached once React hydrates, so an image that already
+  // failed in the server-rendered HTML never fires it. Check on mount instead.
+  useEffect(() => {
+    const img = imgRef.current
+    if (img && restaurant.image_url && img.complete && img.naturalWidth === 0) {
+      setImageFailed(true)
+    }
+  }, [restaurant.image_url])
   const imageSrc = hasRealImage
     ? (restaurant.image_url as string)
     : "/images/restaurant-fallback-sm.jpg"
@@ -107,6 +117,7 @@ export function RestaurantCard({
       {/* Image header (Google Places photo, or watercolor fallback when none) */}
       <div className="relative aspect-[16/9] w-full overflow-hidden bg-muted">
         <img
+          ref={imgRef}
           src={imageSrc || "/placeholder.svg"}
           alt={hasRealImage ? `Photo of ${restaurant.name}` : ""}
           aria-hidden={hasRealImage ? undefined : true}
