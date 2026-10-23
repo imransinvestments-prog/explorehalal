@@ -37,6 +37,23 @@ The `/admin` area needs two environment variables (in `.env.local` locally and i
 
 If either is missing, admin sign-in is disabled. Changing either one signs out every admin session.
 
+## Database migrations
+
+The database schema lives in `supabase/migrations/`, starting from
+`20261023000000_baseline.sql` (a snapshot of production). Every schema change is a new
+file named `<YYYYMMDDHHMMSS>_<description>.sql`.
+
+1. Add `SUPABASE_DB_URL` (the **Session pooler** connection string from the Supabase
+   dashboard's **Connect** dialog) to `.env.local` for the target project.
+2. Apply new migrations to the **staging** project first, check the app against it, then
+   apply them to production after taking a backup:
+
+   ```bash
+   psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/<file>.sql
+   ```
+
+Never edit a migration that has already been applied; add a new one instead.
+
 ## Learn More
 
 To learn more, take a look at the following resources:
