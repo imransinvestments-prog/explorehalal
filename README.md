@@ -26,6 +26,11 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 Run the checks with `pnpm test` and `pnpm typecheck`.
 
+End-to-end browser tests live in `e2e/` and use Playwright. Install the browser once with
+`pnpm exec playwright install chromium`, then run `pnpm e2e` (starts `pnpm dev`), or point
+them at a deployment with `PLAYWRIGHT_BASE_URL=https://explorehalal.vercel.app pnpm e2e`.
+In GitHub Actions they run against every successful Vercel preview and production deployment.
+
 ## Admin sign-in
 
 The `/admin` area needs two environment variables (in `.env.local` locally and in Vercel):

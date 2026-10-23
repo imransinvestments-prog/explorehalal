@@ -1,0 +1,38 @@
+name: E2E
+
+# Vercel reports each deployment (preview and production) back to GitHub;
+# run the Playwright suite against it once it is live.
+on:
+  deployment_status:
+
+concurrency:
+  group: e2e-${{ github.event.deployment.id }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    if: github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PLAYWRIGHT_BASE_URL: ${{ github.event.deployment_status.environment_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.deployment.sha }}
+      - uses: pnpm/action-setup@v4 # version comes from package.json "packageManager"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-${{ github.event.deployment.environment }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
