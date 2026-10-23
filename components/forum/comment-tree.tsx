@@ -30,7 +30,8 @@ function Comment({
   const [replying, setReplying] = useState(false)
 
   return (
-    <div className={cn(depth > 0 && "border-l border-border pl-4")}>
+    // Indent only the first few levels so deep threads stay readable on phones.
+    <div className={cn(depth > 0 && depth <= 3 && "border-l border-border pl-3 sm:pl-4")}>
       <div className="rounded-xl border border-border bg-card p-4">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span className="font-medium text-foreground">{node.author}</span>
@@ -44,7 +45,7 @@ function Comment({
               <button
                 type="button"
                 onClick={() => setReplying((v) => !v)}
-                className="text-xs font-medium text-primary transition-colors hover:underline"
+                className="-my-2 min-h-11 text-xs font-medium text-primary transition-colors hover:underline sm:min-h-0 sm:py-2"
               >
                 {replying ? "Cancel" : "Reply"}
               </button>

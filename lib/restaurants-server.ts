@@ -1,4 +1,6 @@
 import "server-only"
+import { unstable_cache } from "next/cache"
+import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 import type { Restaurant } from "./types"
 import { createClient } from "./supabase/server"
 
@@ -45,45 +47,85 @@ function normalizeRestaurant(row: Restaurant): Restaurant {
  */
 const PAGE_SIZE = 1000
 
-export async function fetchRestaurants(): Promise<Restaurant[]> {
-  const supabase = await createClient()
+/** Cache tag for the public restaurant list; invalidate it after any write. */
+export const RESTAURANTS_TAG = "restaurants"
 
+type PageFetcher = (from: number) => Promise<Restaurant[]>
+
+/** Page through the table with retries. A page fetcher throws on error. */
+async function fetchAllPages(fetchPage: PageFetcher): Promise<Restaurant[]> {
   let lastError = ""
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const all: Restaurant[] = []
-    let from = 0
-    let failed = false
-
-    for (;;) {
-      const { data, error } = await supabase
-        .from("restaurants")
-        .select(COLUMNS)
-        .order("name", { ascending: true })
-        .range(from, from + PAGE_SIZE - 1)
-
-      if (error) {
-        lastError = error.message
-        console.log(`[v0] fetchRestaurants attempt ${attempt}/${MAX_ATTEMPTS} failed:`, error.message)
-        failed = true
-        break
+    try {
+      const all: Restaurant[] = []
+      for (let from = 0; ; from += PAGE_SIZE) {
+        const page = await fetchPage(from)
+        all.push(...page)
+        if (page.length < PAGE_SIZE) break
       }
-
-      const page = (data ?? []) as Restaurant[]
-      all.push(...page)
-
-      if (page.length < PAGE_SIZE) break
-      from += PAGE_SIZE
-    }
-
-    if (!failed) {
-      return all.map(normalizeRestaurant)
-    }
-
-    if (attempt < MAX_ATTEMPTS) {
-      await new Promise((resolve) => setTimeout(resolve, attempt * 500))
+      // Pages can be cached at slightly different moments, so a row that moved
+      // across a page boundary could appear twice. Keep the first copy.
+      const seen = new Set<string>()
+      return all
+        .filter((r) => (seen.has(r.id) ? false : (seen.add(r.id), true)))
+        .map(normalizeRestaurant)
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error)
+      console.log(`[v0] fetchRestaurants attempt ${attempt}/${MAX_ATTEMPTS} failed:`, lastError)
+      if (attempt < MAX_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 500))
+      }
     }
   }
 
   console.log("[v0] Failed to fetch restaurants after retries:", lastError)
   return []
+}
+
+/** Always-fresh list for admin tools (export, dedupe). */
+export async function fetchRestaurants(): Promise<Restaurant[]> {
+  const supabase = await createClient()
+  return fetchAllPages(async (from) => {
+    const { data, error } = await supabase
+      .from("restaurants")
+      .select(COLUMNS)
+      .order("name", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1)
+    if (error) throw new Error(error.message)
+    return (data ?? []) as Restaurant[]
+  })
+}
+
+/**
+ * One cached page of the public list. Cached per page because the Data Cache
+ * skips entries over 2MB and the whole table can exceed that. Uses a
+ * cookie-less anon client (cached functions can't read cookies; RLS allows
+ * public read). Errors throw, so a failed page is never cached.
+ */
+const fetchCachedPage = unstable_cache(
+  async (from: number): Promise<Restaurant[]> => {
+    const supabase = createSupabaseClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { auth: { persistSession: false, autoRefreshToken: false } },
+    )
+    const { data, error } = await supabase
+      .from("restaurants")
+      .select(COLUMNS)
+      .order("name", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1)
+    if (error) throw new Error(error.message)
+    return (data ?? []) as Restaurant[]
+  },
+  ["restaurants-page"],
+  // Admin writes invalidate the tag immediately; the hour covers the
+  // maintenance scripts in scripts/, which write to Supabase directly.
+  { tags: [RESTAURANTS_TAG], revalidate: 3600 },
+)
+
+/** Cached list for the public finder page. */
+export function fetchRestaurantsCached(): Promise<Restaurant[]> {
+  return fetchAllPages(fetchCachedPage)
 }

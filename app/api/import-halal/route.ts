@@ -1,9 +1,18 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { revalidateTag } from 'next/cache';
+import { RESTAURANTS_TAG } from '@/lib/restaurants-server';
+import { isAdmin } from '@/lib/admin-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
+  // Writes with the service-role key and spends Parse API credits, so only
+  // a signed-in admin (see /admin) may trigger an import.
+  if (!(await isAdmin())) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const targetCity = searchParams.get('city');
 
@@ -145,6 +154,8 @@ export async function GET(request: Request) {
         if (errors.length < 5) errors.push(`${item.name}: ${error.message}`);
       }
     }
+
+    if (insertedCount > 0) revalidateTag(RESTAURANTS_TAG, 'max');
 
     return NextResponse.json({
       success: true,

@@ -68,6 +68,8 @@ export default async function ForumPage() {
             <p className="mt-1 text-sm text-muted-foreground">Be the first to start a discussion.</p>
           </div>
         ) : (
+          <section aria-labelledby="topics-heading">
+          <h2 id="topics-heading" className="sr-only">Topics</h2>
           <ul className="flex flex-col gap-3">
             {threads.map((thread) => {
               const replies = thread.forum_comments?.[0]?.count ?? 0
@@ -101,6 +103,7 @@ export default async function ForumPage() {
               )
             })}
           </ul>
+          </section>
         )}
       </main>
     </div>

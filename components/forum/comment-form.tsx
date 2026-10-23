@@ -45,11 +45,16 @@ export function CommentForm({
         value={body}
         onChange={(e) => setBody(e.target.value)}
         placeholder={placeholder}
+        aria-label={parentId ? placeholder.replace(/…$/, "") : "Your reply"}
         rows={3}
         autoFocus={autoFocus}
         required
       />
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && (
+        <p className="text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      )}
       <div className="flex items-center justify-end gap-2">
         {onDone && (
           <Button type="button" variant="ghost" size="sm" onClick={onDone} disabled={pending}>

@@ -7,19 +7,16 @@ import type { RestaurantWithDistance } from "@/lib/types"
 import type { Coordinates } from "@/lib/distance"
 import { DEFAULT_COORDS } from "@/lib/distance"
 
-function markerIcon(color: string, active: boolean) {
-  return L.divIcon({
-    className: "",
-    html: `<span style="
-      display:flex;align-items:center;justify-content:center;
-      width:${active ? 30 : 24}px;height:${active ? 30 : 24}px;
-      background:${color};border:2px solid white;border-radius:9999px;
-      box-shadow:0 1px 6px rgba(0,0,0,.35);
-      transform:translate(-50%,-50%);
-    "></span>`,
-    iconSize: [0, 0],
-    iconAnchor: [0, 0],
-  })
+// Restaurant pins are canvas circle markers (the map uses preferCanvas), so
+// thousands of results cost one canvas instead of thousands of DOM nodes.
+function markerStyle(color: string, active: boolean): L.CircleMarkerOptions {
+  return {
+    radius: active ? 11 : 8,
+    color: "white",
+    weight: 2,
+    fillColor: color,
+    fillOpacity: 1,
+  }
 }
 
 function originIcon() {
@@ -27,8 +24,8 @@ function originIcon() {
     className: "",
     html: `<span style="
       display:block;width:18px;height:18px;
-      background:oklch(0.55 0.02 155);border:3px solid white;border-radius:9999px;
-      box-shadow:0 0 0 4px oklch(0.55 0.02 155 / .25);
+      background:var(--muted-foreground);border:3px solid white;border-radius:9999px;
+      box-shadow:0 0 0 4px oklch(from var(--muted-foreground) l c h / .25);
       transform:translate(-50%,-50%);
     "></span>`,
     iconSize: [0, 0],
@@ -36,21 +33,25 @@ function originIcon() {
   })
 }
 
-const CERT_COLORS: Record<string, string> = {
-  HMC: "oklch(0.5 0.13 155)",
-  HFA: "oklch(0.52 0.12 245)",
-  BOTH: "oklch(0.5 0.13 155)",
-}
+// Canvas can't resolve CSS variables, so read the certification tokens once
+// from the active theme. Falls back to the HMC token for unknown bodies.
+let certColors: Record<string, string> | null = null
 
 function markerColor(r: RestaurantWithDistance) {
-  return CERT_COLORS[r.certification_body] ?? CERT_COLORS.HMC
+  if (!certColors) {
+    const style = getComputedStyle(document.documentElement)
+    const hmc = style.getPropertyValue("--hmc").trim()
+    const hfa = style.getPropertyValue("--hfa").trim()
+    certColors = { HMC: hmc, HFA: hfa, BOTH: hmc }
+  }
+  return certColors[r.certification_body] ?? certColors.HMC
 }
 
 function popupHtml(r: RestaurantWithDistance) {
   const ratingBlock =
     typeof r.rating === "number" && r.rating > 0
       ? `<br /><span style="display:inline-flex;align-items:center;gap:3px;">
-          <span style="color:#f5a524;" aria-hidden="true">★</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="var(--gold)" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
           <strong>${r.rating.toFixed(1)}</strong>
           ${
             typeof r.review_count === "number" && r.review_count > 0
@@ -101,7 +102,7 @@ export default function MapView({
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<L.Map | null>(null)
-  const markersRef = useRef<Map<string, L.Marker>>(new Map())
+  const markersRef = useRef<Map<string, L.CircleMarker>>(new Map())
   const originMarkerRef = useRef<L.Marker | null>(null)
   const prevActiveRef = useRef<string | null>(null)
   // Keep the latest onSelect without re-running marker effects.
@@ -130,7 +131,6 @@ export default function MapView({
       preferCanvas: true,
       zoomAnimation: !prefersInstantCamera(),
       markerZoomAnimation: false,
-      tap: false,
     })
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -215,9 +215,10 @@ export default function MapView({
     // Add markers that are new to the list.
     for (const r of restaurants) {
       if (markers.has(r.id)) continue
-      const marker = L.marker([r.latitude, r.longitude], {
-        icon: markerIcon(markerColor(r), activeId === r.id),
-      })
+      const marker = L.circleMarker(
+        [r.latitude, r.longitude],
+        markerStyle(markerColor(r), activeId === r.id),
+      )
         .bindPopup(popupHtml(r))
         .addTo(map)
       marker.on("click", () => onSelectRef.current(r.id))
@@ -236,7 +237,7 @@ export default function MapView({
       const prevRestaurant = restaurants.find((r) => r.id === prev)
       const prevMarker = markers.get(prev)
       if (prevRestaurant && prevMarker) {
-        prevMarker.setIcon(markerIcon(markerColor(prevRestaurant), false))
+        prevMarker.setStyle(markerStyle(markerColor(prevRestaurant), false))
       }
     }
 
@@ -244,7 +245,8 @@ export default function MapView({
       const activeRestaurant = restaurants.find((r) => r.id === activeId)
       const activeMarker = markers.get(activeId)
       if (activeRestaurant && activeMarker) {
-        activeMarker.setIcon(markerIcon(markerColor(activeRestaurant), true))
+        activeMarker.setStyle(markerStyle(markerColor(activeRestaurant), true))
+        activeMarker.bringToFront()
       }
     }
 
