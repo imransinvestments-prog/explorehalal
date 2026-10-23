@@ -15,10 +15,10 @@ import {
   sessionToken,
   verifyPassword,
 } from "@/lib/admin-auth"
-import { fetchRestaurants } from "@/lib/restaurants-server"
+import { fetchRestaurants, RESTAURANTS_TAG } from "@/lib/restaurants-server"
 import { findDuplicateClusters } from "@/lib/dedupe"
 import type { Restaurant } from "@/lib/types"
-import { revalidatePath } from "next/cache"
+import { revalidatePath, updateTag } from "next/cache"
 
 // ---------------------------------------------------------------------------
 // Admin authentication (single shared password gate)
@@ -327,6 +327,7 @@ export async function uploadRestaurants(rows: UploadRow[]): Promise<UploadSummar
   }
 
   if (inserted > 0 || updated > 0) {
+    updateTag(RESTAURANTS_TAG)
     revalidatePath("/")
   }
 
@@ -528,6 +529,7 @@ export async function importFromApi(
     const { error } = await supabase.from("restaurants").insert(toInsert)
     if (error) return { ...base, error: `Insert failed: ${error.message}` }
     base.inserted = toInsert.length
+    updateTag(RESTAURANTS_TAG)
     revalidatePath("/")
   }
 
@@ -654,6 +656,7 @@ export async function deleteDuplicates(ids: string[]): Promise<DedupeResult> {
     deleted += count ?? archivedIds.length
   }
 
+  updateTag(RESTAURANTS_TAG)
   revalidatePath("/")
   return { deleted }
 }

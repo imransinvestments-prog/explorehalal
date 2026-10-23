@@ -34,6 +34,8 @@ export function RestaurantList({
   }
 
   return (
+    <section aria-labelledby="results-heading">
+    <h2 id="results-heading" className="sr-only">Results</h2>
     <ul className="flex flex-col gap-3">
       {restaurants.map((r) => (
         <li key={r.id}>
@@ -46,5 +48,6 @@ export function RestaurantList({
         </li>
       ))}
     </ul>
+    </section>
   )
 }

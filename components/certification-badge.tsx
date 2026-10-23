@@ -52,7 +52,7 @@ export function CertificationBadges({
 
 const STATUS_STYLES: Record<CertificationStatus, string> = {
   Certified: "bg-primary/12 text-primary",
-  Pending: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
+  Pending: "bg-gold/15 text-gold",
   Expired: "bg-muted text-muted-foreground",
   Suspended: "bg-destructive/12 text-destructive",
   Unverified: "bg-muted text-muted-foreground",

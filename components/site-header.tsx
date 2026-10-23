@@ -14,7 +14,7 @@ const NAV_ITEMS = [
   { href: "/sources", label: "Sources", icon: HelpCircle },
 ]
 
-export function SiteHeader() {
+export function SiteHeader({ tagline }: { tagline?: string } = {}) {
   const pathname = usePathname()
   const [displayName, setDisplayName] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -47,6 +47,11 @@ export function SiteHeader() {
           <BrandLogo className="h-9 w-auto object-contain sm:h-11" />
           <span className="sr-only">Explore Halal home</span>
         </Link>
+        {tagline && (
+          <p className="hidden font-heading text-sm font-semibold leading-tight text-gold lg:block">
+            {tagline}
+          </p>
+        )}
 
         <nav className="flex items-center gap-1" aria-label="Primary">
           {NAV_ITEMS.map((item) => {
@@ -58,14 +63,14 @@ export function SiteHeader() {
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition-colors sm:px-3",
+                  "inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition-colors sm:min-h-9 sm:min-w-0 sm:px-3",
                   active
                     ? "bg-accent text-accent-foreground"
                     : "text-muted-foreground hover:bg-accent/10 hover:text-foreground",
                 )}
               >
                 <Icon className="size-4" aria-hidden="true" />
-                <span className="hidden sm:inline">{item.label}</span>
+                <span className="sr-only sm:not-sr-only">{item.label}</span>
               </Link>
             )
           })}
@@ -80,23 +85,23 @@ export function SiteHeader() {
               <button
                 type="button"
                 onClick={signOut}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/10 hover:text-foreground sm:px-3"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/10 hover:text-foreground sm:min-h-9 sm:min-w-0 sm:px-3"
               >
                 <LogOut className="size-3.5" aria-hidden="true" />
-                <span className="hidden sm:inline">Sign out</span>
+                <span className="sr-only sm:not-sr-only">Sign out</span>
               </button>
             </>
           ) : (
             <Link
               href="/auth/login"
-              className="inline-flex items-center rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+              className="inline-flex min-h-11 items-center rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold sm:min-h-9 text-primary-foreground transition-colors hover:bg-primary/90"
             >
               Login
             </Link>
           )}
           <Link
             href="/admin"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/10 hover:text-foreground sm:px-3"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 sm:min-h-9 sm:min-w-0 rounded-lg border border-border px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/10 hover:text-foreground sm:px-3"
           >
             <Lock className="size-3.5" aria-hidden="true" />
             <span className="sr-only sm:not-sr-only">Admin</span>

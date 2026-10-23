@@ -56,7 +56,7 @@ export function SearchFilters({
             type="button"
             onClick={onUseMyLocation}
             disabled={locating}
-            className="inline-flex items-center gap-1 text-xs font-medium text-primary transition-colors hover:underline disabled:opacity-60"
+            className="-my-2 inline-flex min-h-11 items-center gap-1 text-xs font-medium text-primary transition-colors hover:underline disabled:opacity-60 sm:min-h-0 sm:py-2"
           >
             <LocateFixed className="size-3.5" aria-hidden="true" />
             {locating ? "Locating…" : "Use my location"}
@@ -110,7 +110,7 @@ export function SearchFilters({
         <Label htmlFor="cuisine">Cuisine</Label>
         <Select
           value={filters.cuisine}
-          onValueChange={(v) => onChange({ ...filters, cuisine: v })}
+          onValueChange={(v) => onChange({ ...filters, cuisine: v ?? "all" })}
         >
           <SelectTrigger id="cuisine" className="h-10 w-full">
             <SelectValue placeholder="Any cuisine" />

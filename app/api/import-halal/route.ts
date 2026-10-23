@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { revalidateTag } from 'next/cache';
+import { RESTAURANTS_TAG } from '@/lib/restaurants-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -145,6 +147,8 @@ export async function GET(request: Request) {
         if (errors.length < 5) errors.push(`${item.name}: ${error.message}`);
       }
     }
+
+    if (insertedCount > 0) revalidateTag(RESTAURANTS_TAG, 'max');
 
     return NextResponse.json({
       success: true,

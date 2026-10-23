@@ -65,7 +65,7 @@ export function ApiImport() {
             </div>
             <div className="flex w-full flex-col gap-1.5 sm:w-32">
               <Label htmlFor="radius">Radius</Label>
-              <Select value={radius} onValueChange={setRadius}>
+              <Select value={radius} onValueChange={(v) => v && setRadius(v)}>
                 <SelectTrigger id="radius">
                   <SelectValue />
                 </SelectTrigger>

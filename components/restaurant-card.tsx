@@ -22,7 +22,7 @@ function StarRating({ rating }: { rating: number }) {
         ))}
       </span>
       <span
-        className="absolute inset-0 flex overflow-hidden text-amber-400"
+        className="absolute inset-0 flex overflow-hidden text-gold"
         style={{ width: `${pct}%` }}
       >
         {[0, 1, 2, 3, 4].map((i) => (
@@ -62,19 +62,21 @@ export function RestaurantCard({
       ? `${restaurant.address}, ${restaurant.postcode}`
       : restaurant.address
 
+  // Fall back to a coordinate search if the venue has no name/address text.
   const mapsUrl =
     restaurant.google_maps_url ??
     buildGoogleMapsUrl({
       name: restaurant.name,
       address: restaurant.address,
       postcode: restaurant.postcode,
-    })
+    }) ??
+    `https://www.google.com/maps/search/?api=1&query=${restaurant.latitude},${restaurant.longitude}`
 
   const [imageFailed, setImageFailed] = useState(false)
   const hasRealImage = Boolean(restaurant.image_url) && !imageFailed
   const imageSrc = hasRealImage
     ? (restaurant.image_url as string)
-    : "/images/restaurant-fallback.jpg"
+    : "/images/restaurant-fallback-sm.jpg"
 
   return (
     <a
@@ -169,7 +171,7 @@ export function RestaurantCard({
             <CalendarClock className="size-3" aria-hidden="true" />
             Last verified {formatDate(restaurant.last_scraped_date)}
           </p>
-          <span className="inline-flex items-center gap-0.5 text-xs font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
+          <span className="inline-flex items-center gap-0.5 text-xs font-medium text-primary transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-visible:opacity-100">
             Open in Maps
             <ExternalLink className="size-3" aria-hidden="true" />
           </span>

@@ -86,7 +86,7 @@ export function FilterChips({ value, onChange }: FilterChipsProps) {
         <button
           type="button"
           onClick={() => onChange(INITIAL_CHIPS)}
-          className="inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+          className="inline-flex min-h-11 items-center gap-1 rounded-full px-2.5 py-1.5 text-xs font-medium text-muted-foreground sm:min-h-8 transition-colors hover:text-foreground"
         >
           <X className="size-3.5" aria-hidden="true" />
           Clear
@@ -113,7 +113,7 @@ function Chip({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
+        "inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors sm:min-h-8",
         active
           ? "border-primary bg-primary text-primary-foreground"
           : "border-border bg-card text-muted-foreground hover:border-primary/50 hover:text-foreground",

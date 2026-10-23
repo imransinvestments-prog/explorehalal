@@ -5,7 +5,7 @@ import { getSearchAnalytics } from "@/lib/analytics"
 import { adminLogout } from "@/app/actions"
 import { AdminLoginForm } from "@/components/admin-login-form"
 import { AdminAnalytics } from "@/components/admin-analytics"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 
 export const metadata = {
   title: "Admin dashboard | Explore Halal",
@@ -68,30 +68,22 @@ export default async function AdminPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Button asChild variant="outline">
-              <Link href="/admin/upload">
-                <Upload className="size-4" />
-                Upload restaurants
-              </Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link href="/admin/import">
-                <CloudDownload className="size-4" />
-                Import from API
-              </Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link href="/admin/dedupe">
-                <Copy className="size-4" />
-                Remove duplicates
-              </Link>
-            </Button>
-            <Button asChild variant="outline">
-              <a href="/admin/export" download>
-                <FileSpreadsheet className="size-4" />
-                Download Excel
-              </a>
-            </Button>
+            <Link href="/admin/upload" className={buttonVariants({ variant: "outline" })}>
+              <Upload className="size-4" />
+              Upload restaurants
+            </Link>
+            <Link href="/admin/import" className={buttonVariants({ variant: "outline" })}>
+              <CloudDownload className="size-4" />
+              Import from API
+            </Link>
+            <Link href="/admin/dedupe" className={buttonVariants({ variant: "outline" })}>
+              <Copy className="size-4" />
+              Remove duplicates
+            </Link>
+            <a href="/admin/export" download className={buttonVariants({ variant: "outline" })}>
+              <FileSpreadsheet className="size-4" />
+              Download Excel
+            </a>
             <form action={adminLogout}>
               <Button type="submit" variant="ghost">
                 <LogOut className="size-4" />

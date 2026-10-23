@@ -107,12 +107,7 @@ function LoginForm() {
     const error = await sendCode()
     setStatus("idle")
     if (error) {
-      if (error.message.toLowerCase().includes("rate") || error.status === 429) {
-        setCooldown(SEND_COOLDOWN_SECONDS)
-        showMessage("Too many requests. Please wait for the timer, then try again.", "error")
-      } else {
-        showMessage("Couldn't resend. Try again in a moment.", "error")
-      }
+      showMessage(error, "error")
       return
     }
     setCooldown(SEND_COOLDOWN_SECONDS)
@@ -163,7 +158,10 @@ function LoginForm() {
             />
           </div>
           {message && (
-            <p className={messageTone === "info" ? "text-sm text-muted-foreground" : "text-sm text-destructive"}>
+            <p
+              role={messageTone === "error" ? "alert" : "status"}
+              className={messageTone === "info" ? "text-sm text-muted-foreground" : "text-sm text-destructive"}
+            >
               {message}
             </p>
           )}
@@ -193,7 +191,10 @@ function LoginForm() {
             />
           </div>
           {message && (
-            <p className={messageTone === "info" ? "text-sm text-muted-foreground" : "text-sm text-destructive"}>
+            <p
+              role={messageTone === "error" ? "alert" : "status"}
+              className={messageTone === "info" ? "text-sm text-muted-foreground" : "text-sm text-destructive"}
+            >
               {message}
             </p>
           )}

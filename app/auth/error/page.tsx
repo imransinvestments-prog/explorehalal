@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { Button } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 
 export default function AuthErrorPage() {
   return (
@@ -8,9 +8,9 @@ export default function AuthErrorPage() {
       <p className="text-pretty text-muted-foreground leading-relaxed">
         This magic link has expired or has already been used. Request a fresh link to continue to the forum.
       </p>
-      <Button asChild>
-        <Link href="/auth/login">Back to login</Link>
-      </Button>
+      <Link href="/auth/login" className={buttonVariants()}>
+        Back to login
+      </Link>
     </main>
   )
 }
