@@ -37,6 +37,35 @@ The `/admin` area needs two environment variables (in `.env.local` locally and i
 
 If either is missing, admin sign-in is disabled. Changing either one signs out every admin session.
 
+## Database migrations
+
+The database schema lives in `supabase/migrations/`, starting from
+`20261023000000_baseline.sql` (a snapshot of production). Every schema change is a new
+file named `<YYYYMMDDHHMMSS>_<description>.sql`.
+
+1. Add `SUPABASE_DB_URL` (the **Session pooler** connection string from the Supabase
+   dashboard's **Connect** dialog) to `.env.local` for the target project.
+2. Rehearse new migrations on a throwaway local PostgreSQL 17 database first (there is no
+   hosted staging project). `supabase/local/supabase-stubs.sql` stands in for the
+   Supabase-managed roles, `auth.users` and `auth.uid()`:
+
+   ```bash
+   initdb -D ../explorehalal-pgdata -U postgres -A trust --no-locale
+   pg_ctl -D ../explorehalal-pgdata -o "-p 54329" -w start
+   psql postgresql://postgres@localhost:54329/postgres -v ON_ERROR_STOP=1 \
+     -f supabase/local/supabase-stubs.sql
+   # then every file in supabase/migrations/, oldest first, with --single-transaction
+   ```
+
+   This checks the SQL, not the app: Supabase Auth and Storage are not available locally.
+3. Apply them to production after taking a backup:
+
+   ```bash
+   psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 --single-transaction -f supabase/migrations/<file>.sql
+   ```
+
+Never edit a migration that has already been applied; add a new one instead.
+
 ## Learn More
 
 To learn more, take a look at the following resources:
