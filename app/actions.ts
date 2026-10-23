@@ -11,8 +11,8 @@ import { fetchPlaceRating } from "@/lib/google-places.mjs"
 import {
   ADMIN_COOKIE,
   ADMIN_COOKIE_OPTIONS,
+  createSessionToken,
   isAdmin,
-  sessionToken,
   verifyPassword,
 } from "@/lib/admin-auth"
 import { fetchRestaurants, RESTAURANTS_TAG } from "@/lib/restaurants-server"
@@ -38,8 +38,14 @@ export async function adminLogin(
     return { error: "Incorrect password. Please try again." }
   }
 
+  const token = createSessionToken()
+  if (!token) {
+    console.error("[admin] ADMIN_SESSION_SECRET is missing or shorter than 32 characters")
+    return { error: "Admin sign-in is not configured on this server." }
+  }
+
   const store = await cookies()
-  store.set(ADMIN_COOKIE, sessionToken(), ADMIN_COOKIE_OPTIONS)
+  store.set(ADMIN_COOKIE, token, ADMIN_COOKIE_OPTIONS)
   redirect("/admin")
 }
 
@@ -106,6 +112,7 @@ export interface UploadSummary {
   updated: number
   skipped: number
   results: UploadRowResult[]
+  error?: string
 }
 
 const VALID_BODIES = new Set(["HMC", "HFA", "BOTH", "COMMUNITY"])
@@ -196,6 +203,12 @@ async function reverseGeocode(lat: number, lng: number): Promise<string> {
  * updated, new ones inserted. Invalid rows are skipped with a reason.
  */
 export async function uploadRestaurants(rows: UploadRow[]): Promise<UploadSummary> {
+  // Server actions are public POST endpoints: the admin page gate alone does
+  // not protect them, so re-check the session before any privileged work.
+  if (!(await isAdmin())) {
+    return { inserted: 0, updated: 0, skipped: 0, results: [], error: "Not authorised." }
+  }
+
   const supabase = createAdminClient()
   const results: UploadRowResult[] = []
   let inserted = 0
@@ -398,6 +411,8 @@ export async function importFromApi(
     skippedExisting: 0,
     skippedUngeocoded: 0,
   }
+
+  if (!(await isAdmin())) return { ...base, error: "Not authorised." }
 
   if (!area) return { ...base, error: "Enter an area — a UK postcode or place name." }
 
