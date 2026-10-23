@@ -2,7 +2,7 @@
 -- with `pg_dump --schema-only --schema=public --no-owner` (PostgreSQL 17).
 --
 -- Every later schema change must be a new numbered migration in this folder,
--- applied to staging before production. See README "Database migrations".
+-- rehearsed locally before production. See README "Database migrations".
 --
 -- Edits to the raw dump: removed pg_dump's \restrict/\unrestrict psql
 -- meta-commands and `CREATE SCHEMA public` (it always exists on Supabase);
