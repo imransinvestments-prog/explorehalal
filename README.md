@@ -24,6 +24,19 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
+Run the checks with `pnpm test` and `pnpm typecheck`.
+
+## Admin sign-in
+
+The `/admin` area needs two environment variables (in `.env.local` locally and in Vercel):
+
+| Variable | Purpose |
+| --- | --- |
+| `ADMIN_PASSWORD` | The shared admin password. |
+| `ADMIN_SESSION_SECRET` | Signs admin session cookies. At least 32 random characters, e.g. `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. |
+
+If either is missing, admin sign-in is disabled. Changing either one signs out every admin session.
+
 ## Learn More
 
 To learn more, take a look at the following resources:

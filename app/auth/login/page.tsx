@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
 import { sendLoginCode } from "./actions"
+import { safeNextPath } from "@/lib/safe-redirect"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -16,7 +17,7 @@ const SEND_COOLDOWN_SECONDS = 45
 function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const next = searchParams.get("next") ?? "/forum"
+  const next = safeNextPath(searchParams.get("next"))
 
   const [step, setStep] = useState<"details" | "code">("details")
   const [name, setName] = useState("")

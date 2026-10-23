@@ -369,8 +369,15 @@ export function UploadRestaurants() {
         </Card>
       )}
 
+      {summary?.error && (
+        <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <span>{summary.error}</span>
+        </div>
+      )}
+
       {/* Result summary */}
-      {summary && (
+      {summary && !summary.error && (
         <Card className="overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
             <div className="flex items-center gap-2">
