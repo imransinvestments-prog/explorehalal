@@ -5,6 +5,7 @@ import { MapPin, UtensilsCrossed, Navigation, CalendarClock, BadgeInfo, External
 import { cn } from "@/lib/utils"
 import type { RestaurantWithDistance } from "@/lib/types"
 import { buildGoogleMapsUrl } from "@/lib/google-maps.mjs"
+import { cardImageSrc } from "@/lib/restaurant-image"
 import { CertificationBadges, StatusBadge } from "./certification-badge"
 
 /** Five stars with a gold fill layer clipped to the fractional rating. */
@@ -73,19 +74,20 @@ export function RestaurantCard({
     `https://www.google.com/maps/search/?api=1&query=${restaurant.latitude},${restaurant.longitude}`
 
   const [imageFailed, setImageFailed] = useState(false)
-  const hasRealImage = Boolean(restaurant.image_url) && !imageFailed
+  const realImageSrc = cardImageSrc(restaurant)
+  const hasRealImage = Boolean(realImageSrc) && !imageFailed
   const imgRef = useRef<HTMLImageElement>(null)
 
   // onError is only attached once React hydrates, so an image that already
   // failed in the server-rendered HTML never fires it. Check on mount instead.
   useEffect(() => {
     const img = imgRef.current
-    if (img && restaurant.image_url && img.complete && img.naturalWidth === 0) {
+    if (img && realImageSrc && img.complete && img.naturalWidth === 0) {
       setImageFailed(true)
     }
-  }, [restaurant.image_url])
+  }, [realImageSrc])
   const imageSrc = hasRealImage
-    ? (restaurant.image_url as string)
+    ? (realImageSrc as string)
     : "/images/restaurant-fallback-sm.jpg"
 
   return (
